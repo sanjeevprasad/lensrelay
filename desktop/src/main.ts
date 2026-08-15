@@ -44,6 +44,9 @@ interface ControlStatus {
 let expiryTimer: number | undefined;
 let rotatingPairingCode = false;
 let lastControlConnected = false;
+let mediaTransportStatus: "offline" | "loading" | "live" = "offline";
+let phoneMediaExpected = false;
+let pairedDeviceCount: number | null = null;
 
 const requiredElement = (id: string): HTMLElement => {
   const element = document.getElementById(id);
@@ -76,7 +79,9 @@ function renderStatus(status: ReceiverStatus): void {
   }
 
   requiredElement("show-pairing").textContent =
-    status.connectionState === "paired" ? "Pair another phone" : "Show pairing QR";
+    (pairedDeviceCount ?? (status.connectionState === "paired" ? 1 : 0)) > 0
+      ? "Pair another phone"
+      : "Pair a phone";
 }
 
 function renderPlatform(info: PlatformInfo): void {
@@ -116,6 +121,13 @@ function renderPairingSession(session: PairingSession): void {
   expiryTimer = window.setInterval(renderExpiry, 1000);
 }
 
+function hidePairingSession(): void {
+  requiredElement("pairing-content").hidden = true;
+  if (expiryTimer !== undefined) window.clearInterval(expiryTimer);
+  expiryTimer = undefined;
+  rotatingPairingCode = false;
+}
+
 async function createPairingSession(): Promise<void> {
   const button = requiredElement("show-pairing") as HTMLButtonElement;
   const refresh = requiredElement("refresh-pairing") as HTMLButtonElement;
@@ -123,7 +135,7 @@ async function createPairingSession(): Promise<void> {
   refresh.disabled = true;
   try {
     renderPairingSession(await invoke<PairingSession>("create_pairing_session"));
-    button.textContent = "Pairing code ready";
+    button.textContent = pairedDeviceCount && pairedDeviceCount > 0 ? "Pair another phone" : "Pair a phone";
   } catch (error) {
     button.textContent = "Could not create code";
     requiredElement("pairing-expiry").textContent = String(error);
@@ -141,15 +153,30 @@ function configureMediaPreview(endpoint: string): void {
   watch.muted = true;
 
   const renderMediaStatus = (status: "offline" | "loading" | "live"): void => {
+    mediaTransportStatus = status;
     requiredElement("media-state").textContent = status;
-    requiredElement("live-preview-card").hidden = status === "offline";
-    if (status === "live") {
+    syncMediaPreviewVisibility();
+    if (status === "live" && phoneMediaExpected) {
       requiredElement("status-badge").textContent = "Connected";
       requiredElement("connection-detail").textContent = "Receiving encrypted Media over QUIC video.";
     }
   };
   renderMediaStatus(watch.broadcast.out.status.peek());
   watch.broadcast.out.status.subscribe(renderMediaStatus);
+}
+
+function clearMediaPreview(): void {
+  const watch = requiredElement("media-watch");
+  for (const canvas of watch.querySelectorAll("canvas")) {
+    const context = canvas.getContext("2d");
+    context?.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function syncMediaPreviewVisibility(): void {
+  const visible = phoneMediaExpected && mediaTransportStatus !== "offline";
+  requiredElement("live-preview-card").hidden = !visible;
+  if (!visible) clearMediaPreview();
 }
 
 const asStrings = (value: unknown): string[] => Array.isArray(value) ? value.map(String) : [];
@@ -174,6 +201,8 @@ function renderControlStatus(status: ControlStatus): void {
   const capabilities = status.capabilities ?? {};
   const state = status.state ?? {};
   const commands = new Set(asStrings(capabilities.commands));
+  phoneMediaExpected = status.connected && state.streaming === true;
+  syncMediaPreviewVisibility();
   lastControlConnected = status.connected;
   requiredElement("control-state").textContent = status.connected ? "Securely connected" : "Phone offline";
   requiredElement("control-detail").textContent = status.connected
@@ -303,7 +332,8 @@ async function initialize(): Promise<void> {
     renderStatus(status);
     renderPlatform(platform);
     configureMediaPreview(mediaEndpoint);
-    if (status.connectionState === "idle") {
+    const devices = await refreshPairedDevices();
+    if (devices.length === 0) {
       await createPairingSession();
     }
   } catch (error) {
@@ -326,11 +356,16 @@ async function forgetPairedDevice(phoneId: string): Promise<void> {
   await Promise.all([refreshPairedDevices(), refreshReceiverStatus()]);
 }
 
-async function refreshPairedDevices(): Promise<void> {
+async function refreshPairedDevices(): Promise<PairedDevice[]> {
   const devices = await invoke<PairedDevice[]>("get_paired_devices");
+  const previousCount = pairedDeviceCount;
+  pairedDeviceCount = devices.length;
   const panel = requiredElement("paired-devices-panel");
   const list = requiredElement("paired-devices");
   panel.hidden = devices.length === 0;
+  requiredElement("no-paired-devices").hidden = devices.length > 0;
+  requiredElement("show-pairing").textContent = devices.length > 0 ? "Pair another phone" : "Pair a phone";
+  if (previousCount === 0 && devices.length > 0) hidePairingSession();
   list.replaceChildren();
   for (const device of devices) {
     const row = document.createElement("div");
@@ -351,13 +386,14 @@ async function refreshPairedDevices(): Promise<void> {
     row.append(identity, forget);
     list.append(row);
   }
+  return devices;
 }
 
 requiredElement("show-pairing").addEventListener("click", () => void createPairingSession());
 requiredElement("refresh-pairing").addEventListener("click", () => void createPairingSession());
+requiredElement("hide-pairing").addEventListener("click", hidePairingSession);
 configureControlEvents();
 void initialize();
-void refreshPairedDevices();
 void refreshControlStatus();
 window.setInterval(() => void refreshReceiverStatus(), 1000);
 window.setInterval(() => void refreshPairedDevices(), 2000);

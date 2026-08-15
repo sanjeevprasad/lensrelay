@@ -5,6 +5,7 @@
     <color name="lensrelay_overlay">#CC101714</color>
     <color name="lensrelay_green">#32D5A4</color>
     <color name="lensrelay_green_muted">#5940A98A</color>
+    <color name="lensrelay_danger">#E5484D</color>
     <color name="lensrelay_white">#F5FFFC</color>
     <color name="lensrelay_text_secondary">#B8C9C3</color>
 </resources>

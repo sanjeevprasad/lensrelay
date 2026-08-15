@@ -3,6 +3,7 @@ package com.atanx.lensrelay
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureRequest
@@ -20,6 +21,7 @@ import android.widget.SeekBar
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.PopupMenu
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraState
@@ -31,11 +33,13 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.atanx.lensrelay.databinding.ActivityMainBinding
+import com.atanx.lensrelay.databinding.ItemPairedDesktopBinding
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.swmansion.moqkit.publish.encoder.VideoCodec
@@ -63,6 +67,7 @@ class MainActivity : AppCompatActivity() {
     private var controlDesktopId: String? = null
     private var controlConnected = false
     private var controlGeneration = 0L
+    private var selectedDesktopId: String? = null
     private var streamSettings = StreamSettings()
     private var streamAspectRatio: Float? = null
     private var actualStreamSize: Size? = null
@@ -248,61 +253,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        binding.connectPairedDesktopButton.setOnClickListener {
-            cameraPurpose = CameraPurpose.Stream
-            cameraRequested = true
-            if (hasCameraPermission()) {
-                startPairedStream()
-            } else {
-                showPermissionRequired()
-            }
-        }
-
-        binding.allowRemoteStartSwitch.setOnCheckedChangeListener { _, checked ->
-            val desktop = latestPairedDesktop() ?: return@setOnCheckedChangeListener
-            if (desktop.allowRemoteStart != checked) {
-                pairingStore.setAllowRemoteStart(desktop.receiverId, checked)
-                publishControlState()
-            }
-        }
-
-        binding.forgetPairedDesktopButton.setOnClickListener {
-            val desktop = latestPairedDesktop() ?: return@setOnClickListener
-            binding.forgetPairedDesktopButton.isEnabled = false
-            showMessage(getString(R.string.unpairing_desktop))
-            analysisExecutor.execute {
-                val result = runCatching {
-                    PairingClient.unpair(
-                        desktop,
-                        phoneIdentity.createUnpairProof(desktop.receiverId),
-                    )
-                }
-                runOnUiThread {
-                    binding.forgetPairedDesktopButton.isEnabled = true
-                    result.onSuccess {
-                        forgetDesktopLocally(desktop)
-                        showMessage(getString(R.string.desktop_unpaired))
-                    }.onFailure { error ->
-                        Log.w(TAG, "Could not unpair from desktop", error)
-                        Snackbar.make(
-                            binding.root,
-                            R.string.remote_unpair_failed,
-                            Snackbar.LENGTH_LONG,
-                        ).setAction(R.string.remove_locally) {
-                            forgetDesktopLocally(desktop)
-                            showMessage(getString(R.string.desktop_forgotten))
-                        }.show()
-                    }
-                }
-            }
-        }
-
         binding.stopStreamingButton.setOnClickListener {
             stopStreamingAndShowHome()
         }
 
         binding.switchStreamingCameraButton.setOnClickListener {
-            val desktop = latestPairedDesktop() ?: return@setOnClickListener
+            val desktop = activePairedDesktop() ?: return@setOnClickListener
             activeLens = activeLens.opposite()
             pairingStore.setPreferredCamera(desktop.receiverId, activeLens)
             restartMoqStream()
@@ -423,6 +379,16 @@ class MainActivity : AppCompatActivity() {
         }
         imageAnalysis = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setResolutionSelector(
+                ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            Size(1280, 720),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
+                        ),
+                    )
+                    .build(),
+            )
             .build()
             .also { analysis ->
                 analysis.setAnalyzer(
@@ -505,6 +471,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 pairingInProgress = false
+                selectedDesktopId = desktop.receiverId
                 stopCameraAndShowHome()
                 startControlClient(force = true)
                 showMessage(getString(R.string.pairing_saved, desktop.receiverName))
@@ -578,7 +545,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         activeCamera.cameraInfo.torchState.observe(this) { state ->
-            binding.torchButton.text = getString(
+            val color = if (state == TorchState.ON) R.color.lensrelay_green else R.color.lensrelay_white
+            binding.torchButton.iconTint = ColorStateList.valueOf(ContextCompat.getColor(this, color))
+            binding.torchButton.contentDescription = getString(
                 if (state == TorchState.ON) R.string.torch_on else R.string.torch_off,
             )
         }
@@ -680,44 +649,136 @@ class MainActivity : AppCompatActivity() {
         binding.statusCard.visibility = View.GONE
         binding.scannerFrame.visibility = View.GONE
         binding.scannerControls.visibility = View.GONE
-        renderPairedDesktop()
+        renderPairedDesktops()
     }
 
-    private fun renderPairedDesktop() {
-        val desktop = latestPairedDesktop()
-        binding.pairedDesktopCard.visibility = if (desktop == null) View.GONE else View.VISIBLE
-        if (desktop != null) {
-            binding.pairedDesktopName.text = desktop.receiverName
+    private fun renderPairedDesktops() {
+        val desktops = pairedDesktops()
+        binding.pairedDesktopsSection.visibility = if (desktops.isEmpty()) View.GONE else View.VISIBLE
+        binding.pairedDesktopsList.removeAllViews()
+        binding.scanPairingQrButton.text = getString(
+            if (desktops.isEmpty()) R.string.scan_pairing_qr else R.string.pair_another_computer,
+        )
+        desktops.forEach { desktop ->
+            val item = ItemPairedDesktopBinding.inflate(
+                layoutInflater,
+                binding.pairedDesktopsList,
+                false,
+            )
+            item.desktopName.text = desktop.receiverName
             val hasEndpoint = desktop.host.isNotEmpty() &&
                 desktop.port in 1..65535 &&
                 desktop.mediaCertificateFingerprint.length == 64
-            binding.pairedDesktopStatus.setText(
+            item.desktopStatus.setText(
                 when {
                     !hasEndpoint -> R.string.pair_again_to_stream
-                    controlConnected -> R.string.desktop_control_online
+                    controlConnected && controlDesktopId == desktop.receiverId ->
+                        R.string.desktop_control_online
                     else -> R.string.desktop_control_offline
                 },
             )
-            binding.connectPairedDesktopButton.isEnabled = hasEndpoint
-            binding.allowRemoteStartSwitch.isChecked = desktop.allowRemoteStart
+            item.root.isEnabled = hasEndpoint
+            item.root.setOnClickListener { selectAndStream(desktop) }
+            item.desktopMenuButton.setOnClickListener { anchor ->
+                showDesktopMenu(anchor, desktop)
+            }
+            binding.pairedDesktopsList.addView(item.root)
         }
     }
 
-    private fun latestPairedDesktop(): PairedDesktop? =
-        runCatching { pairingStore.load().maxByOrNull { it.pairedAt } }
+    private fun pairedDesktops(): List<PairedDesktop> =
+        runCatching { pairingStore.load().sortedByDescending { it.pairedAt } }
             .onFailure { error -> Log.e(TAG, "Unable to read paired desktops", error) }
-            .getOrNull()
+            .getOrDefault(emptyList())
+
+    private fun activePairedDesktop(): PairedDesktop? {
+        val desktops = pairedDesktops()
+        return desktops.firstOrNull { it.receiverId == selectedDesktopId }
+            ?: desktops.firstOrNull { it.receiverId == controlDesktopId }
+            ?: desktops.firstOrNull()
+    }
+
+    private fun selectAndStream(desktop: PairedDesktop) {
+        selectedDesktopId = desktop.receiverId
+        startControlClient(force = true)
+        cameraPurpose = CameraPurpose.Stream
+        cameraRequested = true
+        if (hasCameraPermission()) startPairedStream() else showPermissionRequired()
+    }
+
+    private fun showDesktopMenu(anchor: View, desktop: PairedDesktop) {
+        PopupMenu(this, anchor).apply {
+            menu.add(R.string.connect_and_stream).setOnMenuItemClickListener {
+                selectAndStream(desktop)
+                true
+            }
+            menu.add(
+                if (desktop.allowRemoteStart) {
+                    R.string.require_remote_confirmation
+                } else {
+                    R.string.trust_remote_start
+                },
+            ).setOnMenuItemClickListener {
+                pairingStore.setAllowRemoteStart(desktop.receiverId, !desktop.allowRemoteStart)
+                if (controlDesktopId == desktop.receiverId) publishControlState()
+                renderPairedDesktops()
+                true
+            }
+            menu.add(R.string.forget_desktop).setOnMenuItemClickListener {
+                confirmForgetDesktop(desktop)
+                true
+            }
+            show()
+        }
+    }
+
+    private fun confirmForgetDesktop(desktop: PairedDesktop) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.forget_desktop_title, desktop.receiverName))
+            .setMessage(R.string.forget_desktop_message)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.forget_desktop) { _, _ -> unpairDesktop(desktop) }
+            .show()
+    }
+
+    private fun unpairDesktop(desktop: PairedDesktop) {
+        showMessage(getString(R.string.unpairing_desktop))
+        analysisExecutor.execute {
+            val result = runCatching {
+                PairingClient.unpair(
+                    desktop,
+                    phoneIdentity.createUnpairProof(desktop.receiverId),
+                )
+            }
+            runOnUiThread {
+                result.onSuccess {
+                    forgetDesktopLocally(desktop)
+                    showMessage(getString(R.string.desktop_unpaired))
+                }.onFailure { error ->
+                    Log.w(TAG, "Could not unpair from desktop", error)
+                    Snackbar.make(
+                        binding.root,
+                        R.string.remote_unpair_failed,
+                        Snackbar.LENGTH_LONG,
+                    ).setAction(R.string.remove_locally) {
+                        forgetDesktopLocally(desktop)
+                        showMessage(getString(R.string.desktop_forgotten))
+                    }.show()
+                }
+            }
+        }
+    }
 
     private fun forgetDesktopLocally(desktop: PairedDesktop) {
-        stopControlClient()
-        moqStreamSession?.stop()
-        moqStreamSession = null
+        if (controlDesktopId == desktop.receiverId) stopControlClient()
+        if (selectedDesktopId == desktop.receiverId) selectedDesktopId = null
         pairingStore.forget(desktop.receiverId)
-        renderPairedDesktop()
+        renderPairedDesktops()
+        startControlClient()
     }
 
     private fun startPairedStream() {
-        val desktop = latestPairedDesktop() ?: return
+        val desktop = activePairedDesktop() ?: return
         activeLens = desktop.preferredCamera
         if (needsLocalNetworkPermission()) {
             pendingStreamDesktop = desktop
@@ -783,7 +844,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun restartMoqStream() {
-        val desktop = latestPairedDesktop() ?: return
+        val desktop = activePairedDesktop() ?: return
         moqStreamSession?.stop()
         moqStreamSession = null
         streamCamera = null
@@ -909,7 +970,7 @@ class MainActivity : AppCompatActivity() {
     ) == PackageManager.PERMISSION_GRANTED
 
     private fun startControlClient(force: Boolean = false) {
-        val desktop = latestPairedDesktop() ?: return
+        val desktop = activePairedDesktop() ?: return
         if (!force && controlDesktopId == desktop.receiverId && controlClient != null) return
         stopControlClient()
         val generation = ++controlGeneration
@@ -925,7 +986,7 @@ class MainActivity : AppCompatActivity() {
                         publishControlCapabilities(streamCamera)
                         publishControlState()
                     }
-                    if (binding.homePanel.visibility == View.VISIBLE) renderPairedDesktop()
+                    if (binding.homePanel.visibility == View.VISIBLE) renderPairedDesktops()
                 }
             },
             onCommand = { command, parameters, responder ->
@@ -959,7 +1020,7 @@ class MainActivity : AppCompatActivity() {
                     responder.respond(true, currentControlState(), null)
                 }
                 "unpair" -> {
-                    val desktop = latestPairedDesktop() ?: error("Desktop is no longer paired")
+                    val desktop = activePairedDesktop() ?: error("Desktop is no longer paired")
                     responder.respond(true, JSONObject().put("removed", true), null)
                     binding.root.postDelayed(
                         {
@@ -976,7 +1037,7 @@ class MainActivity : AppCompatActivity() {
                         "back" -> CameraLens.Back
                         else -> error("Unknown camera")
                     }
-                    latestPairedDesktop()?.let {
+                    activePairedDesktop()?.let {
                         pairingStore.setPreferredCamera(it.receiverId, activeLens)
                     }
                     applyRestartSetting(responder)
@@ -1073,7 +1134,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestRemoteStart(responder: ControlClient.Responder) {
-        val desktop = latestPairedDesktop() ?: error("Desktop is no longer paired")
+        val desktop = activePairedDesktop() ?: error("Desktop is no longer paired")
         if (!hasCameraPermission()) {
             responder.respond(false, null, "Open LensRelay and grant camera permission first")
             return
@@ -1098,7 +1159,7 @@ class MainActivity : AppCompatActivity() {
             }
             .setNeutralButton(R.string.allow_always) { _, _ ->
                 pairingStore.setAllowRemoteStart(desktop.receiverId, true)
-                binding.allowRemoteStartSwitch.isChecked = true
+                renderPairedDesktops()
                 start()
             }
             .setPositiveButton(R.string.allow_once) { _, _ -> start() }
@@ -1205,7 +1266,7 @@ class MainActivity : AppCompatActivity() {
             .put("codec", streamSettings.codec.name.lowercase())
             .put("stabilization", streamSettings.stabilization)
             .put("whiteBalance", streamSettings.whiteBalance)
-            .put("remoteStartAllowed", latestPairedDesktop()?.allowRemoteStart == true)
+            .put("remoteStartAllowed", activePairedDesktop()?.allowRemoteStart == true)
     }
 
     private fun supportedCodecs(): List<String> {

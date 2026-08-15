@@ -16,7 +16,13 @@ class QrCodeAnalyzer(
 ) : ImageAnalysis.Analyzer {
     private val delivered = AtomicBoolean(false)
     private val reader = MultiFormatReader().apply {
-        setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE)))
+        setHints(
+            mapOf(
+                DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+                DecodeHintType.TRY_HARDER to true,
+                DecodeHintType.ALSO_INVERTED to true,
+            ),
+        )
     }
 
     override fun analyze(image: ImageProxy) {
@@ -26,14 +32,17 @@ class QrCodeAnalyzer(
             val buffer = plane.buffer
             val bytes = ByteArray(buffer.remaining())
             buffer.get(bytes)
+            val cropSize = (minOf(image.width, image.height) * SCAN_REGION_RATIO).toInt()
+            val cropLeft = (image.width - cropSize) / 2
+            val cropTop = (image.height - cropSize) / 2
             val source = PlanarYUVLuminanceSource(
                 bytes,
                 plane.rowStride,
                 image.height,
-                0,
-                0,
-                image.width,
-                image.height,
+                cropLeft,
+                cropTop,
+                cropSize,
+                cropSize,
                 false,
             )
             val result = reader.decodeWithState(BinaryBitmap(HybridBinarizer(source)))
@@ -44,5 +53,9 @@ class QrCodeAnalyzer(
             reader.reset()
             image.close()
         }
+    }
+
+    companion object {
+        private const val SCAN_REGION_RATIO = 0.85f
     }
 }

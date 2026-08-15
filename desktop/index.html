@@ -9,18 +9,18 @@
   <body
     class="min-h-screen min-w-80 bg-[radial-gradient(circle_at_85%_8%,rgba(48,207,141,0.14),transparent_35%)] font-sans text-[#eff7f3] antialiased"
   >
-    <main class="mx-auto w-[min(900px,calc(100%-3rem))] py-16 max-sm:w-[calc(100%-1.75rem)] max-sm:py-9">
-      <header class="mb-12 flex items-start gap-5 max-sm:mb-8">
+    <main class="mx-auto w-[min(900px,calc(100%-3rem))] py-10 max-sm:w-[calc(100%-1.75rem)] max-sm:py-6">
+      <header class="mb-8 flex items-center gap-4 max-sm:mb-6">
         <div
-          class="h-11 w-4 shrink-0 rounded-full bg-lens-green shadow-[0_0_32px_rgba(48,207,141,0.35)]"
+          class="h-9 w-3 shrink-0 rounded-full bg-lens-green shadow-[0_0_32px_rgba(48,207,141,0.35)]"
           aria-hidden="true"
         ></div>
         <div>
-          <p class="mb-2.5 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">
+          <p class="mb-1 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">
             LensRelay desktop
           </p>
-          <h1 class="max-w-3xl text-[clamp(2.4rem,7vw,5.6rem)] font-medium leading-[0.98] tracking-[-0.055em]">
-            Your phone camera,<br />ready for the desktop.
+          <h1 class="text-[clamp(1.7rem,4vw,2.7rem)] font-semibold leading-none tracking-[-0.04em]">
+            Your phone camera, ready.
           </h1>
         </div>
       </header>
@@ -68,23 +68,27 @@
         </moq-watch>
       </section>
 
-      <section
+      <details
         id="camera-controls"
-        class="mt-4 rounded-[22px] border border-lens-border bg-lens-panel/80 p-6"
+        class="group mt-4 rounded-[22px] border border-lens-border bg-lens-panel/80"
         aria-labelledby="camera-controls-title"
       >
-        <div class="flex items-center justify-between gap-4">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-4 p-5 marker:content-none">
           <div>
             <p class="mb-1 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">Phone control</p>
             <h2 id="camera-controls-title" class="text-xl font-semibold tracking-tight">Camera controls</h2>
           </div>
-          <span id="control-state" class="rounded-full border border-[#33483f] px-3 py-1.5 text-xs text-lens-muted">Phone offline</span>
-        </div>
-        <p id="control-detail" class="mt-2 text-sm leading-6 text-lens-muted">
-          Open LensRelay on a saved phone to make controls available.
-        </p>
+          <div class="flex items-center gap-3">
+            <span id="control-state" class="rounded-full border border-[#33483f] px-3 py-1.5 text-xs text-lens-muted">Phone offline</span>
+            <span class="text-xl text-lens-muted transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+          </div>
+        </summary>
 
-        <div id="control-fields" class="mt-5 grid grid-cols-3 gap-4 max-md:grid-cols-2 max-sm:grid-cols-1" aria-disabled="true">
+        <div class="border-t border-lens-border p-5">
+          <p id="control-detail" class="mb-5 text-sm leading-6 text-lens-muted">
+            Open LensRelay on a saved phone to make controls available.
+          </p>
+        <div id="control-fields" class="grid grid-cols-3 gap-4 max-md:grid-cols-2 max-sm:grid-cols-1" aria-disabled="true">
           <button id="stream-toggle" type="button" class="cursor-pointer rounded-xl bg-lens-green px-4 py-3 font-bold text-[#07120e] disabled:cursor-not-allowed disabled:opacity-40">Start camera</button>
           <label class="grid gap-1.5 text-sm text-lens-muted">Camera
             <select id="camera-select" data-command="camera" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] disabled:opacity-40"></select>
@@ -118,30 +122,36 @@
           <label class="flex items-center gap-2 text-sm text-lens-muted"><input id="stabilization-toggle" data-command="stabilization" type="checkbox" class="size-4 accent-lens-green disabled:opacity-40" /> Stabilization</label>
         </div>
         <p id="control-error" class="mt-4 text-sm text-[#ffaaa3]" aria-live="polite"></p>
-      </section>
+        </div>
+      </details>
 
       <section
-        class="mt-4 grid grid-cols-[1fr_auto] items-center gap-6 rounded-[22px] border border-lens-border bg-lens-panel/80 p-7 max-sm:grid-cols-1 max-sm:p-5"
+        id="pairing-card"
+        class="mt-4 rounded-[22px] border border-lens-border bg-lens-panel/80 p-5"
         aria-labelledby="pairing-title"
       >
-        <div>
-          <p class="mb-2 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">Pair a phone</p>
-          <h2 id="pairing-title" class="mb-2 text-2xl font-semibold tracking-tight">
-            Connect without an account or cloud service
-          </h2>
-          <p class="leading-6 text-lens-muted">
-            Scan a short-lived code from LensRelay on Android. Pairing stays on your local network.
-          </p>
+        <div class="flex items-center justify-between gap-5 max-sm:items-start">
+          <div>
+            <p class="mb-1 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">Phones</p>
+            <h2 id="pairing-title" class="text-xl font-semibold tracking-tight">Saved phones</h2>
+          </div>
+          <button
+            id="show-pairing"
+            class="shrink-0 cursor-pointer rounded-xl bg-lens-green px-4 py-2.5 text-sm font-bold text-[#07120e] transition hover:bg-[#46dfa4] disabled:cursor-wait disabled:opacity-60"
+            type="button"
+          >
+            Pair a phone
+          </button>
         </div>
-        <button
-          id="show-pairing"
-          class="cursor-pointer rounded-xl bg-lens-green px-5 py-3 font-bold text-[#07120e] transition hover:bg-[#46dfa4] disabled:cursor-wait disabled:opacity-60"
-          type="button"
-        >
-          Show pairing QR
-        </button>
 
-        <div id="pairing-content" class="col-span-full grid grid-cols-[minmax(220px,320px)_1fr] items-center gap-7 pt-1 max-sm:grid-cols-1" hidden>
+        <div id="paired-devices-panel" class="mt-4" hidden>
+          <div id="paired-devices" class="grid gap-2"></div>
+        </div>
+        <p id="no-paired-devices" class="mt-4 text-sm leading-6 text-lens-muted">
+          No phones saved yet. Pair one to get started.
+        </p>
+
+        <div id="pairing-content" class="mt-5 grid grid-cols-[minmax(280px,384px)_1fr] items-center gap-7 border-t border-lens-border pt-5 max-sm:grid-cols-1" hidden>
           <div
             id="pairing-qr"
             class="overflow-hidden rounded-[18px] border-[12px] border-[#f5fffc] bg-[#f5fffc] leading-none [&_svg]:block [&_svg]:h-auto [&_svg]:w-full"
@@ -172,26 +182,35 @@
             >
               Refresh code
             </button>
+            <button
+              id="hide-pairing"
+              class="mt-5 cursor-pointer px-4 py-2.5 text-sm font-semibold text-lens-muted hover:text-[#eff7f3]"
+              type="button"
+            >
+              Hide QR
+            </button>
           </div>
-        </div>
-        <div id="paired-devices-panel" class="col-span-full border-t border-lens-border pt-5" hidden>
-          <p class="mb-3 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">Paired phones</p>
-          <div id="paired-devices" class="grid gap-2"></div>
         </div>
       </section>
 
-      <section class="mt-4 grid grid-cols-2 gap-4 max-sm:grid-cols-1" aria-label="Receiver details">
-        <article class="min-h-36 rounded-[22px] border border-lens-border bg-lens-panel/80 p-6">
+      <details class="group mt-4 rounded-[18px] border border-lens-border bg-lens-panel/60" aria-label="Receiver details">
+        <summary class="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-sm font-semibold text-lens-muted marker:content-none">
+          Connection details
+          <span class="text-lg transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+        </summary>
+        <section class="grid grid-cols-2 gap-4 border-t border-lens-border p-4 max-sm:grid-cols-1">
+        <article class="rounded-[16px] bg-[#18221e] p-5">
           <p class="mb-2 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">Receiver</p>
           <h3 id="receiver-state" class="mb-2 text-lg font-semibold tracking-tight">Starting…</h3>
           <p id="receiver-address" class="leading-6 text-lens-muted">Checking local service</p>
         </article>
-        <article class="min-h-36 rounded-[22px] border border-lens-border bg-lens-panel/80 p-6">
+        <article class="rounded-[16px] bg-[#18221e] p-5">
           <p class="mb-2 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">Virtual camera</p>
           <h3 id="adapter-name" class="mb-2 text-lg font-semibold tracking-tight">Detecting platform…</h3>
           <p id="adapter-detail" class="leading-6 text-lens-muted">Checking host capabilities</p>
         </article>
-      </section>
+        </section>
+      </details>
 
       <footer class="mt-7 flex justify-center gap-2.5 text-xs text-[#61746c]">
         <span>Local only</span><span aria-hidden="true">·</span><span>Open source</span>

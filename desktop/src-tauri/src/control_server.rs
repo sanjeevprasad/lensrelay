@@ -28,6 +28,7 @@ const IO_TICK: Duration = Duration::from_millis(250);
 // Remote start can wait for an explicit decision on the phone.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_MESSAGE_BYTES: u64 = 256 * 1024;
+const PRESENCE_TIMEOUT_SECONDS: u64 = 8;
 
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,10 +66,19 @@ impl ControlHub {
     }
 
     pub fn status(&self) -> Result<ControlStatus, String> {
-        self.status
+        let mut snapshot = self
+            .status
             .lock()
             .map(|status| status.clone())
-            .map_err(|_| "control status is unavailable".to_owned())
+            .map_err(|_| "control status is unavailable".to_owned())?;
+        if snapshot.connected {
+            if let (Some(last_seen), Ok(now)) = (snapshot.last_seen, crate::pairing::unix_time()) {
+                if now.saturating_sub(last_seen) > PRESENCE_TIMEOUT_SECONDS {
+                    snapshot.connected = false;
+                }
+            }
+        }
+        Ok(snapshot)
     }
 
     pub fn send_command(&self, command: &str, parameters: Value) -> Result<Value, String> {

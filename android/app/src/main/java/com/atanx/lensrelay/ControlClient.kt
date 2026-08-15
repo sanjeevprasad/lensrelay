@@ -175,7 +175,7 @@ class ControlClient(
     companion object {
         private const val TAG = "LensRelayControl"
         private const val RECONNECT_DELAY_MS = 2_000L
-        private const val HEARTBEAT_MS = 10_000L
+        private const val HEARTBEAT_MS = 3_000L
         private const val READ_TICK_MS = 1_000
         private const val CONNECT_TIMEOUT_MS = 5_000
     }

@@ -152,7 +152,7 @@ fn render_qr(payload: &str) -> Result<String, String> {
         .map_err(|error| format!("could not generate pairing QR code: {error}"))?;
     Ok(code
         .render::<svg::Color<'_>>()
-        .min_dimensions(320, 320)
+        .min_dimensions(384, 384)
         .dark_color(svg::Color("#08100d"))
         .light_color(svg::Color("#f5fffc"))
         .build())

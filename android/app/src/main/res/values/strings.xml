@@ -10,10 +10,14 @@
     <string name="stop_camera">Stop camera</string>
     <string name="not_now">Not now</string>
     <string name="paired_computer">Saved computer</string>
+    <string name="paired_computers">Saved computers</string>
+    <string name="more_options">More options</string>
     <string name="desktop_identity_saved">Identity saved securely on this phone</string>
     <string name="desktop_control_online">Connected securely — ready for desktop controls</string>
     <string name="desktop_control_offline">Saved securely — open LensRelay Desktop to connect</string>
     <string name="allow_remote_start">Allow this computer to start the camera</string>
+    <string name="trust_remote_start">Trust for remote camera start</string>
+    <string name="require_remote_confirmation">Require confirmation to start</string>
     <string name="remote_start_title">Start camera from desktop?</string>
     <string name="remote_start_message">%1$s wants to start this phone’s camera. Android will keep showing the active camera indicator.</string>
     <string name="allow_once">Allow once</string>
@@ -22,6 +26,8 @@
     <string name="connect_and_stream">Connect and stream</string>
     <string name="pair_again_to_stream">Pair again to save this desktop’s network address</string>
     <string name="forget_desktop">Forget desktop</string>
+    <string name="forget_desktop_title">Forget %1$s?</string>
+    <string name="forget_desktop_message">LensRelay will also try to remove this phone from the computer.</string>
     <string name="desktop_forgotten">Desktop pairing removed from this phone</string>
     <string name="unpairing_desktop">Removing pairing from both devices…</string>
     <string name="desktop_unpaired">Pairing removed from both devices</string>
@@ -32,6 +38,7 @@
     <string name="stream_failed">Could not start streaming: %1$s</string>
     <string name="stop_streaming">Stop streaming</string>
     <string name="scan_pairing_qr">Scan QR to pair a computer</string>
+    <string name="pair_another_computer">Pair another computer</string>
     <string name="scan_qr_instructions">Point the camera at the pairing code shown by LensRelay Desktop.</string>
     <string name="scan_qr_status">Scanning for LensRelay QR code…</string>
     <string name="qr_permission_title">Scan a desktop pairing code</string>
