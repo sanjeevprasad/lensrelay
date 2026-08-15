@@ -22,7 +22,9 @@ The JSON document contains:
   "nonce": "base64url(24 random bytes)",
   "expiresAt": 1786777200,
   "host": "192.168.1.20",
-  "port": 53417
+  "port": 53417,
+  "controlPort": 53419,
+  "mediaCertificateFingerprint": "sha256 certificate fingerprint"
 }
 ```
 
@@ -76,5 +78,6 @@ for later reconnections, and Android must compare any advertised identity with
 the stored public-key-derived receiver ID before connecting. The later secure
 signaling handshake must also prove possession of the desktop private key.
 
-WebRTC signaling will be authenticated against the paired identities. The
-Wi-Fi-only MVP does not use public signaling, STUN, TURN, or cloud media relay.
+MoQ media and the persistent control channel use the TLS certificate pinned by
+the QR. The phone additionally signs the control hello with its paired P-256
+identity. The Wi-Fi-only MVP does not use cloud signaling or a cloud relay.

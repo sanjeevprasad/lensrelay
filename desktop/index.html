@@ -47,6 +47,80 @@
       </section>
 
       <section
+        id="live-preview-card"
+        class="mt-4 overflow-hidden rounded-[22px] border border-lens-border bg-lens-panel/80"
+        aria-labelledby="live-preview-title"
+        hidden
+      >
+        <div class="flex items-center justify-between gap-4 p-5">
+          <div>
+            <p class="mb-1 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">Live Media over QUIC preview</p>
+            <h2 id="live-preview-title" class="text-xl font-semibold tracking-tight">Live phone camera</h2>
+          </div>
+          <span id="media-state" class="font-mono text-xs text-lens-muted">offline</span>
+        </div>
+        <moq-watch id="media-watch" name="camera" visible="always" muted>
+          <canvas
+            class="block h-auto w-full bg-black"
+            role="img"
+            aria-label="Live phone camera preview"
+          ></canvas>
+        </moq-watch>
+      </section>
+
+      <section
+        id="camera-controls"
+        class="mt-4 rounded-[22px] border border-lens-border bg-lens-panel/80 p-6"
+        aria-labelledby="camera-controls-title"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="mb-1 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">Phone control</p>
+            <h2 id="camera-controls-title" class="text-xl font-semibold tracking-tight">Camera controls</h2>
+          </div>
+          <span id="control-state" class="rounded-full border border-[#33483f] px-3 py-1.5 text-xs text-lens-muted">Phone offline</span>
+        </div>
+        <p id="control-detail" class="mt-2 text-sm leading-6 text-lens-muted">
+          Open LensRelay on a saved phone to make controls available.
+        </p>
+
+        <div id="control-fields" class="mt-5 grid grid-cols-3 gap-4 max-md:grid-cols-2 max-sm:grid-cols-1" aria-disabled="true">
+          <button id="stream-toggle" type="button" class="cursor-pointer rounded-xl bg-lens-green px-4 py-3 font-bold text-[#07120e] disabled:cursor-not-allowed disabled:opacity-40">Start camera</button>
+          <label class="grid gap-1.5 text-sm text-lens-muted">Camera
+            <select id="camera-select" data-command="camera" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] disabled:opacity-40"></select>
+          </label>
+          <label class="grid gap-1.5 text-sm text-lens-muted">Desktop output rotation
+            <select id="rotation-select" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3]"></select>
+          </label>
+          <label class="grid gap-1.5 text-sm text-lens-muted">Resolution
+            <select id="resolution-select" data-command="resolution" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] disabled:opacity-40"></select>
+          </label>
+          <label class="grid gap-1.5 text-sm text-lens-muted">Frame rate
+            <select id="frame-rate-select" data-command="frameRate" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] disabled:opacity-40"></select>
+          </label>
+          <label class="grid gap-1.5 text-sm text-lens-muted">Codec
+            <select id="codec-select" data-command="codec" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] disabled:opacity-40"></select>
+          </label>
+          <label class="grid gap-1.5 text-sm text-lens-muted">White balance
+            <select id="white-balance-select" data-command="whiteBalance" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] disabled:opacity-40"></select>
+          </label>
+          <label class="grid gap-1.5 text-sm text-lens-muted">Bitrate <span id="bitrate-value">4.0 Mbps</span>
+            <input id="bitrate-slider" data-command="bitrate" type="range" min="100000" max="100000000" step="100000" value="4000000" class="accent-lens-green disabled:opacity-40" />
+          </label>
+          <label class="grid gap-1.5 text-sm text-lens-muted">Zoom <span id="zoom-value">1.0×</span>
+            <input id="zoom-slider" data-command="zoom" type="range" min="1" max="1" step="0.05" value="1" class="accent-lens-green disabled:opacity-40" />
+          </label>
+          <label class="grid gap-1.5 text-sm text-lens-muted">Exposure <span id="exposure-value">0</span>
+            <input id="exposure-slider" data-command="exposure" type="range" min="0" max="0" step="1" value="0" class="accent-lens-green disabled:opacity-40" />
+          </label>
+          <label class="flex items-center gap-2 text-sm text-lens-muted"><input id="torch-toggle" data-command="torch" type="checkbox" class="size-4 accent-lens-green disabled:opacity-40" /> Torch</label>
+          <label class="flex items-center gap-2 text-sm text-lens-muted"><input id="mirror-toggle" type="checkbox" class="size-4 accent-lens-green" /> Mirror desktop preview</label>
+          <label class="flex items-center gap-2 text-sm text-lens-muted"><input id="stabilization-toggle" data-command="stabilization" type="checkbox" class="size-4 accent-lens-green disabled:opacity-40" /> Stabilization</label>
+        </div>
+        <p id="control-error" class="mt-4 text-sm text-[#ffaaa3]" aria-live="polite"></p>
+      </section>
+
+      <section
         class="mt-4 grid grid-cols-[1fr_auto] items-center gap-6 rounded-[22px] border border-lens-border bg-lens-panel/80 p-7 max-sm:grid-cols-1 max-sm:p-5"
         aria-labelledby="pairing-title"
       >
@@ -99,6 +173,10 @@
               Refresh code
             </button>
           </div>
+        </div>
+        <div id="paired-devices-panel" class="col-span-full border-t border-lens-border pt-5" hidden>
+          <p class="mb-3 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">Paired phones</p>
+          <div id="paired-devices" class="grid gap-2"></div>
         </div>
       </section>
 

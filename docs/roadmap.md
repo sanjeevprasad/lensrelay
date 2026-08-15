@@ -9,20 +9,21 @@ end-to-end prototype establishes realistic effort and compatibility.
 - [ ] Register and feed a Media Foundation virtual camera on Windows 11.
 - [ ] Capture and hardware-encode H.264 on representative Android devices.
 - [ ] Measure end-to-end latency over a local Wi-Fi network.
-- [x] Select WebRTC as the initial transport and document the decision.
+- [x] Select MoQ over QUIC as the initial media transport.
 
 ## Phase 1: minimal end-to-end webcam
 
-- [ ] Complete mutual pairing between one Android phone and one desktop receiver.
+- [x] Complete mutual pairing between one Android phone and one desktop receiver.
+- [ ] Validate the Android-to-Tauri MoQ preview on representative devices.
 - [ ] Stream H.264 video at 720p and 1080p.
 - [ ] Expose the stream as a webcam on Windows 11 and Linux.
-- [ ] Support front/back camera selection, focus, zoom, and torch.
+- [x] Add capability-driven front/back, focus, zoom, exposure, torch, and quality controls.
 - [ ] Recover cleanly from network and application restarts.
-- [ ] Test Meet, Zoom, Teams, Discord, OBS, and browser WebRTC capture.
+- [ ] Test the virtual camera in Meet, Zoom, Teams, Discord, OBS, and browsers.
 
 ## Phase 2: usable alpha
 
-- [ ] Add authenticated pairing and encrypted sessions.
+- [x] Add authenticated pairing, mutual unpair, certificate pinning, and encrypted sessions.
 - [ ] Add automatic local discovery with a manual fallback.
 - [ ] Add installers and dependency diagnostics.
 - [ ] Add hardware decoder selection and performance telemetry that remains

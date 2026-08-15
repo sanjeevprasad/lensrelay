@@ -28,7 +28,7 @@ impl VirtualCameraAdapter for UnsupportedAdapter {
             operating_system: std::env::consts::OS,
             adapter_name: "Unsupported platform",
             adapter_available: false,
-            detail: "LensRelay currently targets Windows and Linux",
+            detail: "LensRelay currently targets Windows and Linux".to_owned(),
         }
     }
 }

@@ -12,6 +12,7 @@ object PairingChallenge {
             output.writeField(payload.receiverId)
             output.writeField(payload.publicKey)
             output.writeField(payload.nonce)
+            output.writeField(payload.mediaCertificateFingerprint)
             output.writeLong(payload.expiresAt)
             output.writeField(phoneName)
         }

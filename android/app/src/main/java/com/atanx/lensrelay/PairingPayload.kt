@@ -13,6 +13,8 @@ data class PairingPayload(
     val expiresAt: Long,
     val host: String,
     val port: Int,
+    val controlPort: Int,
+    val mediaCertificateFingerprint: String,
 ) {
     companion object {
         private const val PREFIX = "lensrelay:pair:"
@@ -39,6 +41,8 @@ data class PairingPayload(
             val expiresAt = json.getLong("expiresAt")
             val host = json.getString("host").trim()
             val port = json.getInt("port")
+            val controlPort = json.optInt("controlPort", DEFAULT_CONTROL_PORT)
+            val mediaCertificateFingerprint = json.getString("mediaCertificateFingerprint")
             val publicKeyBytes = decodeUrlSafe(publicKey, "desktop public key")
             val nonceBytes = decodeUrlSafe(nonce, "pairing nonce")
 
@@ -55,6 +59,10 @@ data class PairingPayload(
                 "The desktop network address is invalid."
             }
             require(port in 1..65535) { "The desktop network port is invalid." }
+            require(controlPort in 1..65535) { "The desktop control port is invalid." }
+            require(mediaCertificateFingerprint.matches(Regex("[0-9a-fA-F]{64}"))) {
+                "The desktop media certificate fingerprint is invalid."
+            }
 
             val digest = MessageDigest.getInstance("SHA-256").digest(publicKeyBytes)
             val expectedReceiverId = encodeUrlSafe(digest.copyOfRange(0, 16))
@@ -69,6 +77,8 @@ data class PairingPayload(
                 expiresAt = expiresAt,
                 host = host,
                 port = port,
+                controlPort = controlPort,
+                mediaCertificateFingerprint = mediaCertificateFingerprint.lowercase(),
             )
         }
 
@@ -86,5 +96,7 @@ data class PairingPayload(
             .joinToString(" ") { chunk ->
                 chunk.joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
             }
+
+        private const val DEFAULT_CONTROL_PORT = 53_419
     }
 }

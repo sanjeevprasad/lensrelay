@@ -13,9 +13,6 @@ pub struct ReceiverStatus {
 pub enum ConnectionState {
     Idle,
     Paired,
-    Discovering,
-    Connected,
-    Error,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -24,7 +21,7 @@ pub struct PlatformInfo {
     pub operating_system: &'static str,
     pub adapter_name: &'static str,
     pub adapter_available: bool,
-    pub detail: &'static str,
+    pub detail: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -36,6 +33,14 @@ pub struct PairingSession {
     pub receiver_name: String,
     pub fingerprint: String,
     pub expires_at: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairedDevice {
+    pub phone_id: String,
+    pub phone_name: String,
+    pub paired_at: u64,
 }
 
 #[cfg(test)]

@@ -26,8 +26,47 @@ object PairingClient {
             .put("signature", proof.signature)
             .toString()
 
+        val response = exchange(payload.host, payload.port, request)
+        check(response.optBoolean("ok")) {
+            response.optString("message", "The desktop rejected pairing.")
+        }
+    }
+
+    fun unpair(desktop: PairedDesktop, proof: PhoneUnpairProof) {
+        val request = JSONObject()
+            .put("type", "unpair")
+            .put("version", PROTOCOL_VERSION)
+            .put("receiverId", desktop.receiverId)
+            .put("algorithm", proof.identity.algorithm)
+            .put("phoneId", proof.identity.phoneId)
+            .put("issuedAt", proof.issuedAt)
+            .put("nonce", proof.nonce)
+            .put("signature", proof.signature)
+            .toString()
+        val response = exchange(desktop.host, desktop.port, request)
+        check(response.optBoolean("ok")) {
+            response.optString("message", "The desktop rejected the unpair request.")
+        }
+        check(response.optString("receiverId") == desktop.receiverId) {
+            "The unpair acknowledgement came from a different desktop."
+        }
+        check(response.optString("phoneId") == proof.identity.phoneId) {
+            "The unpair acknowledgement is for a different phone."
+        }
+        check(response.optString("nonce") == proof.nonce) {
+            "The unpair acknowledgement is stale."
+        }
+        UnpairProtocol.verifyDesktopAcknowledgement(
+            desktop,
+            proof.identity.phoneId,
+            proof.nonce,
+            response.getString("signature"),
+        )
+    }
+
+    private fun exchange(host: String, port: Int, request: String): JSONObject {
         Socket().use { socket ->
-            socket.connect(InetSocketAddress(payload.host, payload.port), TIMEOUT_MILLIS)
+            socket.connect(InetSocketAddress(host, port), TIMEOUT_MILLIS)
             socket.soTimeout = TIMEOUT_MILLIS
             val writer = socket.getOutputStream().bufferedWriter(Charsets.UTF_8)
             writer.write(request)
@@ -41,10 +80,7 @@ object PairingClient {
             require(responseLine.length <= MAX_RESPONSE_LENGTH) {
                 "The desktop sent an invalid pairing response."
             }
-            val response = JSONObject(responseLine)
-            check(response.optBoolean("ok")) {
-                response.optString("message", "The desktop rejected pairing.")
-            }
+            return JSONObject(responseLine)
         }
     }
 }

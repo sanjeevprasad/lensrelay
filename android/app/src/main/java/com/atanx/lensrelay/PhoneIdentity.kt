@@ -6,6 +6,7 @@ import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.PrivateKey
+import java.security.SecureRandom
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.util.Base64
@@ -19,6 +20,13 @@ data class PhonePublicIdentity(
 
 data class PhonePairingProof(
     val identity: PhonePublicIdentity,
+    val signature: String,
+)
+
+data class PhoneUnpairProof(
+    val identity: PhonePublicIdentity,
+    val issuedAt: Long,
+    val nonce: String,
     val signature: String,
 )
 
@@ -43,6 +51,30 @@ class PhoneIdentity {
             sign()
         }
         return PhonePairingProof(identity = identity, signature = encode(signature))
+    }
+
+    fun createUnpairProof(receiverId: String): PhoneUnpairProof {
+        val identity = publicIdentity()
+        val issuedAt = System.currentTimeMillis() / 1_000
+        val nonce = ByteArray(24).also(SecureRandom()::nextBytes).let(::encode)
+        val signature = Signature.getInstance(SIGNATURE_ALGORITHM).run {
+            initSign(privateKey())
+            update(UnpairProtocol.phoneChallenge(receiverId, identity.phoneId, nonce, issuedAt))
+            sign()
+        }
+        return PhoneUnpairProof(identity, issuedAt, nonce, encode(signature))
+    }
+
+    fun createControlProof(receiverId: String): PhoneControlProof {
+        val identity = publicIdentity()
+        val issuedAt = System.currentTimeMillis() / 1_000
+        val nonce = ByteArray(24).also(SecureRandom()::nextBytes).let(::encode)
+        val signature = Signature.getInstance(SIGNATURE_ALGORITHM).run {
+            initSign(privateKey())
+            update(ControlProtocol.phoneChallenge(receiverId, identity.phoneId, nonce, issuedAt))
+            sign()
+        }
+        return PhoneControlProof(identity, issuedAt, nonce, encode(signature))
     }
 
     private fun ensureKeyExists() {

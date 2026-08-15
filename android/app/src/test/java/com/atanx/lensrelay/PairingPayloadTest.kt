@@ -16,6 +16,7 @@ class PairingPayloadTest {
         assertEquals(receiverId(), payload.receiverId)
         assertEquals("192.168.1.20", payload.host)
         assertEquals(53_417, payload.port)
+        assertEquals("ab".repeat(32), payload.mediaCertificateFingerprint)
     }
 
     @Test
@@ -45,6 +46,7 @@ class PairingPayloadTest {
             .put("expiresAt", expiresAt)
             .put("host", "192.168.1.20")
             .put("port", 53_417)
+            .put("mediaCertificateFingerprint", "ab".repeat(32))
             .toString()
         return "lensrelay:pair:${encode(json.toByteArray())}"
     }

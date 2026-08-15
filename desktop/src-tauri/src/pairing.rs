@@ -6,14 +6,14 @@ use std::{
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use directories::ProjectDirs;
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signer, SigningKey};
 use qrcode::{render::svg, QrCode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::model::PairingSession;
 
-const PAIRING_LIFETIME_SECONDS: u64 = 120;
+const PAIRING_LIFETIME_SECONDS: u64 = 30;
 const PAYLOAD_PREFIX: &str = "lensrelay:pair:";
 
 pub struct DesktopIdentity {
@@ -31,6 +31,8 @@ pub(crate) struct PairingPayload {
     pub(crate) expires_at: u64,
     pub(crate) host: String,
     pub(crate) port: u16,
+    pub(crate) control_port: u16,
+    pub(crate) media_certificate_fingerprint: String,
 }
 
 impl DesktopIdentity {
@@ -55,7 +57,13 @@ impl DesktopIdentity {
         })
     }
 
-    pub fn create_pairing_session(&self, host: &str, port: u16) -> Result<PairingSession, String> {
+    pub fn create_pairing_session(
+        &self,
+        host: &str,
+        port: u16,
+        control_port: u16,
+        media_certificate_fingerprint: &str,
+    ) -> Result<PairingSession, String> {
         let public_key = self.signing_key.verifying_key().to_bytes();
         let digest = Sha256::digest(public_key);
         let receiver_id = URL_SAFE_NO_PAD.encode(&digest[..16]);
@@ -76,6 +84,8 @@ impl DesktopIdentity {
             expires_at,
             host: host.to_owned(),
             port,
+            control_port,
+            media_certificate_fingerprint: media_certificate_fingerprint.to_owned(),
         })
         .map_err(|error| format!("could not encode pairing payload: {error}"))?;
         let payload = format!("{PAYLOAD_PREFIX}{}", URL_SAFE_NO_PAD.encode(payload_json));
@@ -89,6 +99,15 @@ impl DesktopIdentity {
             fingerprint,
             expires_at,
         })
+    }
+
+    pub fn receiver_id(&self) -> String {
+        let digest = Sha256::digest(self.signing_key.verifying_key().to_bytes());
+        URL_SAFE_NO_PAD.encode(&digest[..16])
+    }
+
+    pub(crate) fn sign(&self, message: &[u8]) -> String {
+        URL_SAFE_NO_PAD.encode(self.signing_key.sign(message).to_bytes())
     }
 }
 
@@ -168,7 +187,7 @@ mod tests {
             signing_key: SigningKey::from_bytes(&[7_u8; 32]),
         };
         let session = identity
-            .create_pairing_session("192.168.1.20", 53_417)
+            .create_pairing_session("192.168.1.20", 53_417, 53_419, &"ab".repeat(32))
             .expect("session should be generated");
 
         let encoded = session
@@ -186,5 +205,7 @@ mod tests {
         assert!(session.qr_svg.contains("<svg"));
         assert_eq!(value["host"], "192.168.1.20");
         assert_eq!(value["port"], 53_417);
+        assert_eq!(value["controlPort"], 53_419);
+        assert_eq!(value["mediaCertificateFingerprint"], "ab".repeat(32));
     }
 }

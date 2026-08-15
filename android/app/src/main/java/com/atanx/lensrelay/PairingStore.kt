@@ -17,7 +17,13 @@ data class PairedDesktop(
     val receiverName: String,
     val publicKey: String,
     val fingerprint: String,
+    val host: String,
+    val port: Int,
+    val controlPort: Int,
+    val mediaCertificateFingerprint: String,
     val pairedAt: Long,
+    val preferredCamera: CameraLens,
+    val allowRemoteStart: Boolean,
 )
 
 class PairingStore(context: Context) {
@@ -36,7 +42,15 @@ class PairingStore(context: Context) {
                         receiverName = item.getString("receiverName"),
                         publicKey = item.getString("publicKey"),
                         fingerprint = item.getString("fingerprint"),
+                        host = item.optString("host"),
+                        port = item.optInt("port"),
+                        controlPort = item.optInt("controlPort", DEFAULT_CONTROL_PORT),
+                        mediaCertificateFingerprint = item.optString("mediaCertificateFingerprint"),
                         pairedAt = item.getLong("pairedAt"),
+                        preferredCamera = runCatching {
+                            CameraLens.valueOf(item.optString("preferredCamera"))
+                        }.getOrDefault(CameraLens.Back),
+                        allowRemoteStart = item.optBoolean("allowRemoteStart", false),
                     ),
                 )
             }
@@ -44,30 +58,82 @@ class PairingStore(context: Context) {
     }
 
     fun save(payload: PairingPayload): PairedDesktop {
+        val pairings = load()
         val pairedDesktop = PairedDesktop(
             receiverId = payload.receiverId,
             receiverName = payload.receiverName,
             publicKey = payload.publicKey,
             fingerprint = payload.fingerprint,
+            host = payload.host,
+            port = payload.port,
+            controlPort = payload.controlPort,
+            mediaCertificateFingerprint = payload.mediaCertificateFingerprint,
             pairedAt = System.currentTimeMillis(),
+            preferredCamera = pairings
+                .firstOrNull { it.receiverId == payload.receiverId }
+                ?.preferredCamera
+                ?: CameraLens.Back,
+            allowRemoteStart = pairings
+                .firstOrNull { it.receiverId == payload.receiverId }
+                ?.allowRemoteStart
+                ?: false,
         )
-        val pairings = load()
-            .filterNot { it.receiverId == pairedDesktop.receiverId }
-            .plus(pairedDesktop)
-        val array = JSONArray()
-        pairings.forEach { desktop ->
-            array.put(
-                JSONObject()
-                    .put("receiverId", desktop.receiverId)
-                    .put("receiverName", desktop.receiverName)
-                    .put("publicKey", desktop.publicKey)
-                    .put("fingerprint", desktop.fingerprint)
-                    .put("pairedAt", desktop.pairedAt),
-            )
-        }
-        preferences.edit().putString(PAIRINGS_KEY, encrypt(array.toString())).apply()
+        write(pairings.filterNot { it.receiverId == pairedDesktop.receiverId } + pairedDesktop)
         return pairedDesktop
     }
+
+    fun forget(receiverId: String) {
+        val remaining = load().filterNot { it.receiverId == receiverId }
+        write(remaining)
+    }
+
+    fun setPreferredCamera(receiverId: String, camera: CameraLens): PairedDesktop? {
+        var updated: PairedDesktop? = null
+        val pairings = load().map { desktop ->
+            if (desktop.receiverId == receiverId) {
+                desktop.copy(preferredCamera = camera).also { updated = it }
+            } else {
+                desktop
+            }
+        }
+        if (updated != null) write(pairings)
+        return updated
+    }
+
+    fun setAllowRemoteStart(receiverId: String, allowed: Boolean): PairedDesktop? =
+        update(receiverId) { it.copy(allowRemoteStart = allowed) }
+
+    private fun update(receiverId: String, transform: (PairedDesktop) -> PairedDesktop): PairedDesktop? {
+        var updated: PairedDesktop? = null
+        val pairings = load().map { desktop ->
+            if (desktop.receiverId == receiverId) transform(desktop).also { updated = it } else desktop
+        }
+        if (updated != null) write(pairings)
+        return updated
+    }
+
+    private fun write(pairings: List<PairedDesktop>) {
+        if (pairings.isEmpty()) {
+            preferences.edit().remove(PAIRINGS_KEY).apply()
+            return
+        }
+        val array = JSONArray()
+        pairings.forEach { desktop -> array.put(desktop.toJson()) }
+        preferences.edit().putString(PAIRINGS_KEY, encrypt(array.toString())).apply()
+    }
+
+    private fun PairedDesktop.toJson(): JSONObject = JSONObject()
+        .put("receiverId", receiverId)
+        .put("receiverName", receiverName)
+        .put("publicKey", publicKey)
+        .put("fingerprint", fingerprint)
+        .put("host", host)
+        .put("port", port)
+        .put("controlPort", controlPort)
+        .put("mediaCertificateFingerprint", mediaCertificateFingerprint)
+        .put("pairedAt", pairedAt)
+        .put("preferredCamera", preferredCamera.name)
+        .put("allowRemoteStart", allowRemoteStart)
 
     private fun encrypt(plainText: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -119,5 +185,6 @@ class PairingStore(context: Context) {
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val PREFERENCES_NAME = "lensrelay_secure_pairings"
         private const val PAIRINGS_KEY = "paired_desktops"
+        private const val DEFAULT_CONTROL_PORT = 53_419
     }
 }

@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId = "com.atanx.lensrelay"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0-dev"
@@ -47,6 +47,7 @@ dependencies {
     implementation("androidx.camera:camera-core:$cameraXVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
     implementation("androidx.camera:camera-view:$cameraXVersion")
+    implementation("com.swmansion.moqkit:moqkit:0.3.0")
     implementation("com.google.zxing:core:3.5.4")
 
     testImplementation("junit:junit:4.13.2")

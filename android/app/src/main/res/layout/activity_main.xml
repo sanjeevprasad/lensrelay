@@ -4,6 +4,13 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <SurfaceView
+        android:id="@+id/mediaPreview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/camera_preview"
+        android:visibility="gone" />
+
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
         android:layout_width="match_parent"
@@ -113,6 +120,28 @@
                         android:text="@string/desktop_identity_saved"
                         android:textAppearance="@style/TextAppearance.Material3.BodySmall"
                         android:textColor="@color/lensrelay_text_secondary" />
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/allowRemoteStartSwitch"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="@string/allow_remote_start" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/connectPairedDesktopButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:text="@string/connect_and_stream" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/forgetPairedDesktopButton"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="end"
+                        android:text="@string/forget_desktop" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -169,6 +198,44 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="@string/cancel" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/streamingControls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/control_panel_background"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="18dp"
+        android:paddingBottom="24dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/streamingStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/stream_starting"
+            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+            android:textColor="@color/lensrelay_white" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/switchStreamingCameraButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/switch_camera" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/stopStreamingButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/stop_streaming" />
     </LinearLayout>
 
     <com.google.android.material.card.MaterialCardView

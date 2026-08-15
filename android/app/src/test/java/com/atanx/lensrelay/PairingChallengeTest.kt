@@ -16,6 +16,8 @@ class PairingChallengeTest {
             expiresAt = 1_100,
             host = "192.168.1.20",
             port = 53_417,
+            controlPort = 53_419,
+            mediaCertificateFingerprint = "ab".repeat(32),
         )
 
         val digest = MessageDigest.getInstance("SHA-256")
@@ -23,7 +25,7 @@ class PairingChallengeTest {
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
         assertEquals(
-            "c3c6d3896826db822553a8004b286f14c8491333d8608b0acc8186cd7a7c44a1",
+            "4761d4b9a22753187e0f39fcf10b3f3dec4e3e70762d493d39b59ce218479b5c",
             digest,
         )
     }

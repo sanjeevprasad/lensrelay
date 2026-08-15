@@ -1,5 +1,6 @@
 # Android / Gradle
 .gradle/
+**/.gradle/
 **/build/
 local.properties
 *.apk
@@ -7,18 +8,19 @@ local.properties
 *.ap_
 *.dex
 
-# Rust
-target/
+# Rust, Node and frontend output
+**/target/
+**/node_modules/
+**/dist/
+**/src-tauri/gen/schemas/
 
-# IDEs and editors
+# IDEs and operating systems
 .idea/
-*.iml
 .vscode/
+*.iml
 *.swp
 *.swo
 *~
-
-# Operating systems
 .DS_Store
 Thumbs.db
 Desktop.ini
@@ -33,7 +35,9 @@ Desktop.ini
 *.keystore
 keystore.properties
 
-# Logs and temporary files
+# Logs, temporary files and native crash dumps. Core files may contain memory.
 *.log
 *.tmp
 tmp/
+core
+core.*

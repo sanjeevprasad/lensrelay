@@ -18,12 +18,13 @@ LensRelay has three logical layers:
 
 ```text
 ┌──────────────────────── Android ────────────────────────┐
-│ CameraX -> hardware H.264 -> WebRTC media + DataChannel │
+│ CameraX -> hardware H.264/H.265 -> MoQ media            │
+│ signed TLS control client                               │
 └──────────────────────────────┬───────────────────────────┘
                                │ local Wi-Fi (MVP)
 ┌──────────────────────────────▼───────────────────────────┐
 │ Rust desktop core                                        │
-│ pairing -> WebRTC receive -> decode -> timing -> frames  │
+│ pairing + control -> MoQ receive -> decode -> frames     │
 └─────────────────────┬──────────────────────┬─────────────┘
                       │                      │
               ┌───────▼────────┐     ┌───────▼────────────┐
@@ -47,17 +48,16 @@ The desktop core owns discovery, pairing, session state, transport, decoding,
 frame pacing, reconnection, diagnostics, and shared configuration. It must not
 depend directly on a Linux or Windows virtual-camera API.
 
-### Local WebRTC transport
+### Local media and control transport
 
-The MVP uses peer-to-peer WebRTC over the local Wi-Fi network. H.264 is the
-preferred video codec so the phone and desktop can use hardware acceleration.
-A WebRTC data channel carries session state and camera controls such as lens,
-torch, and quality changes.
+The MVP uses MoQ over QUIC for encoded media on the local Wi-Fi network. A
+separate persistent TLS connection carries presence, capabilities, state and
+camera commands. Pairing pins the desktop TLS certificate; the phone signs its
+control hello with its persistent Android Keystore identity. The phone is the
+authority for permissions and applied camera state.
 
-Discovery and signaling remain local. The MVP does not use public signaling,
-STUN, TURN, or cloud media relays. WebRTC supplies encrypted DTLS/SRTP media,
-packet-loss handling, congestion feedback, and codec negotiation; it does not
-own desktop decoding or the virtual-camera frame sink.
+The Tauri preview validates media capture and transport. It is a prototype
+boundary, not the final virtual-camera frame path.
 
 ### Virtual-camera adapters
 
@@ -88,15 +88,14 @@ platform capability discovery may require separate interfaces.
 - Require explicit pairing before a receiver can access camera data.
 - Display capture state on the phone.
 - Do not depend on internet access for discovery, pairing, or streaming.
-- Restrict WebRTC to local candidates for the Wi-Fi-only MVP.
+- Restrict listeners to the required local-network services.
 - Do not log video, audio, credentials, or reusable pairing secrets.
 - Threat-model local-network attackers before stabilizing the protocol.
 
 ## Open decisions
 
-- Local discovery and WebRTC signaling mechanism
-- Rust WebRTC implementation and Android native integration
-- Pairing and session key exchange
+- Local discovery mechanism
+- Background Android control lifecycle
 - Decoder implementation and distribution strategy
 - Pixel format at the frame-sink boundary
 - Android minimum version after device testing
