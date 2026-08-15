@@ -47,6 +47,7 @@ let rotatingPairingCode = false;
 let lastControlConnected = false;
 let mediaTransportStatus: "offline" | "loading" | "live" = "offline";
 let phoneMediaExpected = false;
+let streamIntent: boolean | null = null;
 let pairedDeviceCount: number | null = null;
 
 const requiredElement = (id: string): HTMLElement => {
@@ -203,7 +204,10 @@ function renderControlStatus(status: ControlStatus): void {
   const capabilities = status.capabilities ?? {};
   const state = status.state ?? {};
   const commands = new Set(asStrings(capabilities.commands));
-  phoneMediaExpected = status.connected && state.streaming === true;
+  const reportedStreaming = state.streaming === true;
+  if (!status.connected || state.streaming === streamIntent) streamIntent = null;
+  const streaming = streamIntent ?? reportedStreaming;
+  phoneMediaExpected = status.connected && streaming;
   syncMediaPreviewVisibility();
   lastControlConnected = status.connected;
   requiredElement("control-state").textContent = status.connected ? "Securely connected" : "Phone offline";
@@ -213,7 +217,7 @@ function renderControlStatus(status: ControlStatus): void {
   requiredElement("control-fields").setAttribute("aria-disabled", String(!status.connected));
   const stream = requiredElement("stream-toggle") as HTMLButtonElement;
   stream.disabled = !status.connected || (!commands.has("start") && !commands.has("stop"));
-  stream.textContent = state.streaming === true ? "Stop camera" : "Start camera";
+  stream.textContent = streaming ? "Stop camera" : "Start camera";
 
   fillSelect("camera-select", asStrings(capabilities.cameras), state.camera);
   fillSelect("frame-rate-select", asNumbers(capabilities.frameRates), state.frameRate);
@@ -254,14 +258,31 @@ function renderControlStatus(status: ControlStatus): void {
   requiredElement("bitrate-value").textContent = `${(Number(state.bitrate ?? 4_000_000) / 1_000_000).toFixed(1)} Mbps`;
 }
 
-async function sendControl(command: string, parameters: Record<string, unknown> = {}): Promise<void> {
+async function sendControl(command: string, parameters: Record<string, unknown> = {}): Promise<boolean> {
   const error = requiredElement("control-error");
   error.textContent = "";
   try {
     await invoke("send_control_command", { command, parameters });
     await refreshControlStatus();
+    return true;
   } catch (reason) {
     error.textContent = String(reason);
+    return false;
+  }
+}
+
+async function setStreaming(streaming: boolean): Promise<void> {
+  streamIntent = streaming;
+  phoneMediaExpected = streaming;
+  syncMediaPreviewVisibility();
+
+  const button = requiredElement("stream-toggle") as HTMLButtonElement;
+  button.textContent = streaming ? "Stop camera" : "Start camera";
+  button.disabled = true;
+
+  if (!await sendControl(streaming ? "start" : "stop")) {
+    streamIntent = null;
+    await refreshControlStatus();
   }
 }
 
@@ -277,7 +298,7 @@ async function refreshControlStatus(): Promise<void> {
 function configureControlEvents(): void {
   requiredElement("stream-toggle").addEventListener("click", () => {
     const stopping = (requiredElement("stream-toggle") as HTMLButtonElement).textContent?.startsWith("Stop") === true;
-    void sendControl(stopping ? "stop" : "start");
+    void setStreaming(!stopping);
   });
   (requiredElement("camera-select") as HTMLSelectElement).addEventListener("change", (event) =>
     void sendControl("camera", { value: (event.target as HTMLSelectElement).value }));
@@ -306,12 +327,22 @@ function configureControlEvents(): void {
   const applyOutputTransform = (): void => {
     const degrees = Number(rotation.value);
     const mirrorScale = mirror.checked ? -1 : 1;
-    requiredElement("media-watch").style.transform = `rotate(${degrees}deg) scaleX(${mirrorScale})`;
+    const viewport = requiredElement("media-viewport");
+    const sideways = Math.abs(degrees) % 180 === 90;
+    const fitScale = sideways && viewport.clientWidth > 0 && viewport.clientHeight > 0
+      ? Math.min(
+          viewport.clientWidth / viewport.clientHeight,
+          viewport.clientHeight / viewport.clientWidth,
+        )
+      : 1;
+    requiredElement("media-watch").style.transform =
+      `rotate(${degrees}deg) scale(${fitScale}) scaleX(${mirrorScale})`;
     localStorage.setItem("lensrelay.mirrorPreview", String(mirror.checked));
     localStorage.setItem("lensrelay.outputRotation", String(degrees));
   };
   mirror.addEventListener("change", applyOutputTransform);
   rotation.addEventListener("change", applyOutputTransform);
+  new ResizeObserver(applyOutputTransform).observe(requiredElement("media-viewport"));
   applyOutputTransform();
   requiredElement("media-watch").addEventListener("click", (event) => {
     const rect = requiredElement("media-watch").getBoundingClientRect();

@@ -25,8 +25,9 @@ pub const CONTROL_PORT: u16 = 53_419;
 const CONTROL_DOMAIN: &str = "lensrelay-phone-control-v1";
 const MAX_CLOCK_SKEW_SECONDS: u64 = 5 * 60;
 const IO_TICK: Duration = Duration::from_millis(250);
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 // Remote start can wait for an explicit decision on the phone.
-const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
+const REMOTE_START_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_MESSAGE_BYTES: u64 = 256 * 1024;
 const PRESENCE_TIMEOUT_SECONDS: u64 = 8;
 
@@ -106,9 +107,14 @@ impl ControlHub {
             })
             .map_err(|_| "control connection closed".to_owned())?;
         drop(active);
+        let timeout = if command == "start" {
+            REMOTE_START_TIMEOUT
+        } else {
+            COMMAND_TIMEOUT
+        };
         response_rx
-            .recv_timeout(COMMAND_TIMEOUT)
-            .map_err(|_| "phone did not answer the control command in time".to_owned())?
+            .recv_timeout(timeout)
+            .map_err(|_| format!("Phone did not respond to the {command} command in time"))?
     }
 
     fn connect(

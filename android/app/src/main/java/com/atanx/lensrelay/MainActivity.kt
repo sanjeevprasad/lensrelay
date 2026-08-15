@@ -1044,8 +1044,14 @@ class MainActivity : AppCompatActivity() {
             when (command) {
                 "start" -> requestRemoteStart(responder)
                 "stop" -> {
+                    // Acknowledge before tearing down CameraX, the encoder, and QUIC. Those
+                    // operations may block, but the control connection must remain responsive.
+                    responder.respond(
+                        true,
+                        currentControlState().put("streaming", false),
+                        null,
+                    )
                     stopStreamingAndShowHome()
-                    responder.respond(true, currentControlState(), null)
                 }
                 "unpair" -> {
                     val desktop = activePairedDesktop() ?: error("Desktop is no longer paired")
@@ -1196,8 +1202,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyRestartSetting(responder: ControlClient.Responder) {
-        if (moqStreamSession != null) restartMoqStream()
+        // Restarting the capture pipeline can be slow on some devices. Confirm the
+        // setting first so the desktop does not mistake teardown latency for failure.
         responder.respond(true, currentControlState(), null)
+        if (moqStreamSession != null) restartMoqStream()
         publishControlState()
     }
 

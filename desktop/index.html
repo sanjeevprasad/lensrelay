@@ -59,13 +59,24 @@
           </div>
           <span id="media-state" class="font-mono text-xs text-lens-muted">offline</span>
         </div>
-        <moq-watch id="media-watch" name="camera" visible="always" muted>
-          <canvas
-            class="block h-auto w-full bg-black"
-            role="img"
-            aria-label="Live phone camera preview"
-          ></canvas>
-        </moq-watch>
+        <div
+          id="media-viewport"
+          class="relative grid aspect-video max-h-[70vh] w-full place-items-center overflow-hidden bg-black [contain:paint]"
+        >
+          <moq-watch
+            id="media-watch"
+            class="block h-full w-full max-w-full overflow-hidden [transform-origin:center]"
+            name="camera"
+            visible="always"
+            muted
+          >
+            <canvas
+              class="block h-full max-h-full w-full max-w-full object-contain bg-black"
+              role="img"
+              aria-label="Live phone camera preview"
+            ></canvas>
+          </moq-watch>
+        </div>
       </section>
 
       <details
@@ -91,22 +102,22 @@
         <div id="control-fields" class="grid grid-cols-3 gap-4 max-md:grid-cols-2 max-sm:grid-cols-1" aria-disabled="true">
           <button id="stream-toggle" type="button" class="cursor-pointer rounded-xl bg-lens-green px-4 py-3 font-bold text-[#07120e] disabled:cursor-not-allowed disabled:opacity-40">Start camera</button>
           <label class="grid gap-1.5 text-sm text-lens-muted">Camera
-            <select id="camera-select" data-command="camera" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] disabled:opacity-40"></select>
+            <select id="camera-select" data-command="camera" class="scheme-dark rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] focus-visible:border-lens-green focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lens-green/35 disabled:text-[#71867d] disabled:opacity-40 [&_option]:bg-[#18221e] [&_option]:text-[#eff7f3] [&_option:checked]:bg-[#2a493c] [&_option:checked]:text-white"></select>
           </label>
           <label class="grid gap-1.5 text-sm text-lens-muted">Desktop output rotation
-            <select id="rotation-select" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3]"></select>
+            <select id="rotation-select" class="scheme-dark rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] focus-visible:border-lens-green focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lens-green/35 [&_option]:bg-[#18221e] [&_option]:text-[#eff7f3] [&_option:checked]:bg-[#2a493c] [&_option:checked]:text-white"></select>
           </label>
           <label class="grid gap-1.5 text-sm text-lens-muted">Resolution
-            <select id="resolution-select" data-command="resolution" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] disabled:opacity-40"></select>
+            <select id="resolution-select" data-command="resolution" class="scheme-dark rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] focus-visible:border-lens-green focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lens-green/35 disabled:text-[#71867d] disabled:opacity-40 [&_option]:bg-[#18221e] [&_option]:text-[#eff7f3] [&_option:checked]:bg-[#2a493c] [&_option:checked]:text-white"></select>
           </label>
           <label class="grid gap-1.5 text-sm text-lens-muted">Frame rate
-            <select id="frame-rate-select" data-command="frameRate" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] disabled:opacity-40"></select>
+            <select id="frame-rate-select" data-command="frameRate" class="scheme-dark rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] focus-visible:border-lens-green focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lens-green/35 disabled:text-[#71867d] disabled:opacity-40 [&_option]:bg-[#18221e] [&_option]:text-[#eff7f3] [&_option:checked]:bg-[#2a493c] [&_option:checked]:text-white"></select>
           </label>
           <label class="grid gap-1.5 text-sm text-lens-muted">Codec
-            <select id="codec-select" data-command="codec" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] disabled:opacity-40"></select>
+            <select id="codec-select" data-command="codec" class="scheme-dark rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] focus-visible:border-lens-green focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lens-green/35 disabled:text-[#71867d] disabled:opacity-40 [&_option]:bg-[#18221e] [&_option]:text-[#eff7f3] [&_option:checked]:bg-[#2a493c] [&_option:checked]:text-white"></select>
           </label>
           <label class="grid gap-1.5 text-sm text-lens-muted">White balance
-            <select id="white-balance-select" data-command="whiteBalance" class="rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] disabled:opacity-40"></select>
+            <select id="white-balance-select" data-command="whiteBalance" class="scheme-dark rounded-lg border border-lens-border bg-[#18221e] px-3 py-2 text-[#eff7f3] focus-visible:border-lens-green focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lens-green/35 disabled:text-[#71867d] disabled:opacity-40 [&_option]:bg-[#18221e] [&_option]:text-[#eff7f3] [&_option:checked]:bg-[#2a493c] [&_option:checked]:text-white"></select>
           </label>
           <label class="grid gap-1.5 text-sm text-lens-muted">Bitrate <span id="bitrate-value">4.0 Mbps</span>
             <input id="bitrate-slider" data-command="bitrate" type="range" min="100000" max="100000000" step="100000" value="4000000" class="accent-lens-green disabled:opacity-40" />
