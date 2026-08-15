@@ -6,14 +6,21 @@ no account, cloud signaling, or media server.
 
 ## Connections
 
-- TCP `53417`: short-lived QR pairing and authenticated unpair fallback.
-- QUIC `53418`: encrypted MoQ media. The QR pins the desktop TLS certificate.
+- TLS/TCP `53417`: short-lived QR pairing and authenticated unpair fallback.
+- QUIC `53418`: encrypted and token-authorized MoQ media. The QR pins the desktop TLS certificate.
+- TCP `53418` on loopback only: desktop WebSocket preview fallback.
 - TLS/TCP `53419`: persistent control connection initiated by the phone.
 
 The control hello is signed by the phone's Android Keystore P-256 identity.
 The desktop accepts it only for a previously paired phone. The phone also
 checks the certificate fingerprint saved from the pairing QR, so both ends are
-authenticated.
+authenticated. Pairing and control bind only the selected private LAN address,
+not every network interface.
+
+The phone receives a short-lived publish-only media token during pairing. A
+successful authenticated control connection refreshes it. The desktop preview
+uses a separate subscribe-only token, and its plaintext WebSocket fallback is
+not exposed beyond loopback.
 
 The phone publishes capabilities and current state. The desktop enables only
 controls reported by that phone. Torch, zoom, exposure and focus are applied

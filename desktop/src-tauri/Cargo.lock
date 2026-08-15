@@ -3037,6 +3037,7 @@ dependencies = [
  "gstreamer",
  "gstreamer-app",
  "moq-relay",
+ "moq-token",
  "p256",
  "qrcode",
  "rcgen",
@@ -3048,6 +3049,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

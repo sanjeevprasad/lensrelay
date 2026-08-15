@@ -23,6 +23,7 @@ interface PairingSession {
   receiverId: string;
   receiverName: string;
   fingerprint: string;
+  confirmationCode: string;
   expiresAt: number;
 }
 
@@ -94,6 +95,7 @@ function renderPairingSession(session: PairingSession): void {
   requiredElement("pairing-qr").innerHTML = session.qrSvg;
   requiredElement("pairing-device").textContent = session.receiverName;
   requiredElement("pairing-fingerprint").textContent = session.fingerprint;
+  requiredElement("pairing-confirmation").textContent = session.confirmationCode;
 
   if (expiryTimer !== undefined) window.clearInterval(expiryTimer);
   const initialRemaining = Math.max(1, session.expiresAt - Math.floor(Date.now() / 1000));

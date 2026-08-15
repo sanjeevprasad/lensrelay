@@ -1,14 +1,7 @@
-use std::{
-    fs,
-    net::{IpAddr, SocketAddr},
-    path::PathBuf,
-    sync::mpsc,
-    thread,
-    time::Duration,
-};
+use std::{fs, net::SocketAddr, path::PathBuf, sync::mpsc, thread, time::Duration};
 
 use directories::ProjectDirs;
-use moq_relay::{Config, PublicConfig, PublicDetailed, Relay};
+use moq_relay::{Config, Relay};
 use rcgen::{CertificateParams, KeyPair};
 
 pub const MEDIA_PORT: u16 = 53_418;
@@ -18,16 +11,19 @@ pub struct MediaRelayInfo {
     pub certificate_fingerprint: String,
     pub certificate_path: PathBuf,
     pub private_key_path: PathBuf,
+    runtime_private_key: bool,
 }
 
-pub fn start(host: &str, receiver_id: &str) -> Result<MediaRelayInfo, String> {
+pub fn start(host: &str, receiver_id: &str, auth_key: &PathBuf) -> Result<MediaRelayInfo, String> {
     let host = host.to_owned();
     let scope = format!("lensrelay/{receiver_id}");
-    let endpoint = format!("http://{}:{MEDIA_PORT}/{scope}", url_host(&host));
-    let (certificate, private_key) = certificate_paths()?;
-    ensure_certificate(&host, &certificate, &private_key)?;
+    // WebKit's WebSocket fallback is plaintext, so expose it on loopback only.
+    // Android uses the certificate-pinned QUIC listener on the selected LAN address.
+    let endpoint = format!("http://127.0.0.1:{MEDIA_PORT}/{scope}");
+    let (certificate, private_key, runtime_private_key) = prepare_certificate(&host)?;
     let relay_certificate = certificate.clone();
     let relay_private_key = private_key.clone();
+    let auth_key = auth_key.clone();
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
 
     thread::Builder::new()
@@ -46,16 +42,12 @@ pub fn start(host: &str, receiver_id: &str) -> Result<MediaRelayInfo, String> {
 
             runtime.block_on(async move {
                 let mut config = Config::default();
-                config.server.bind = Some(format!("0.0.0.0:{MEDIA_PORT}"));
+                config.server.bind = Some(format!("{host}:{MEDIA_PORT}"));
                 config.server.tls.cert = vec![relay_certificate];
                 config.server.tls.key = vec![relay_private_key];
-                config.web.http.listen = Some(SocketAddr::from(([0, 0, 0, 0], MEDIA_PORT)));
+                config.web.http.listen = Some(SocketAddr::from(([127, 0, 0, 1], MEDIA_PORT)));
                 config.web.ws = true;
-                config.auth.public = Some(PublicConfig::Detailed(PublicDetailed {
-                    subscribe: vec![scope.clone()],
-                    publish: vec![scope],
-                    api: None,
-                }));
+                config.auth.key = Some(auth_key.to_string_lossy().into_owned());
 
                 match Relay::load(config).await {
                     Ok(relay) => {
@@ -87,27 +79,70 @@ pub fn start(host: &str, receiver_id: &str) -> Result<MediaRelayInfo, String> {
         certificate_fingerprint,
         certificate_path: certificate,
         private_key_path: private_key,
+        runtime_private_key,
     })
 }
 
-fn certificate_paths() -> Result<(PathBuf, PathBuf), String> {
-    let project = ProjectDirs::from("com", "atanx", "LensRelay")
-        .ok_or_else(|| "could not determine the desktop config directory".to_owned())?;
-    let directory = project.config_dir().join("media");
-    Ok((
-        directory.join("certificate.pem"),
-        directory.join("private-key.pem"),
-    ))
+pub fn cleanup_runtime_key(info: &MediaRelayInfo) {
+    if info.runtime_private_key {
+        let _ = fs::remove_file(&info.private_key_path);
+    }
 }
 
-fn ensure_certificate(
+fn media_directory() -> Result<PathBuf, String> {
+    let project = ProjectDirs::from("com", "atanx", "LensRelay")
+        .ok_or_else(|| "could not determine the desktop config directory".to_owned())?;
+    Ok(project.config_dir().join("media"))
+}
+
+fn prepare_certificate(host: &str) -> Result<(PathBuf, PathBuf, bool), String> {
+    let directory = media_directory()?;
+    let certificate = directory.join("certificate.pem");
+    #[cfg(windows)]
+    let protected_key = directory.join("private-key.dpapi");
+    #[cfg(not(windows))]
+    let protected_key = directory.join("private-key.pem");
+
+    if !certificate.is_file() || !protected_key.is_file() {
+        let legacy_key = directory.join("private-key.pem");
+        if cfg!(windows) && certificate.is_file() && legacy_key.is_file() {
+            let key = fs::read(&legacy_key)
+                .map_err(|error| format!("could not migrate media private key: {error}"))?;
+            crate::secure_storage::write(&protected_key, &key)
+                .map_err(|error| format!("could not protect media private key: {error}"))?;
+            fs::remove_file(&legacy_key)
+                .map_err(|error| format!("could not remove legacy media private key: {error}"))?;
+        } else {
+            generate_certificate(host, &certificate, &protected_key)?;
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        let key = fs::read(&protected_key)
+            .map_err(|error| format!("could not read media private key: {error}"))?;
+        crate::secure_storage::write(&protected_key, &key)
+            .map_err(|error| format!("could not restrict media private key: {error}"))?;
+    }
+
+    #[cfg(windows)]
+    {
+        let runtime = directory.join(".private-key.runtime.pem");
+        let key = crate::secure_storage::read(&protected_key)
+            .map_err(|error| format!("could not unlock media private key: {error}"))?;
+        crate::secure_storage::write_runtime_private(&runtime, &key)
+            .map_err(|error| format!("could not prepare media private key: {error}"))?;
+        return Ok((certificate, runtime, true));
+    }
+    #[cfg(not(windows))]
+    Ok((certificate, protected_key, false))
+}
+
+fn generate_certificate(
     host: &str,
     certificate: &PathBuf,
     private_key: &PathBuf,
 ) -> Result<(), String> {
-    if certificate.is_file() && private_key.is_file() {
-        return Ok(());
-    }
     let directory = certificate
         .parent()
         .ok_or_else(|| "media certificate path has no parent".to_owned())?;
@@ -121,27 +156,9 @@ fn ensure_certificate(
         .self_signed(&key)
         .map_err(|error| format!("could not sign media certificate: {error}"))?
         .pem();
-    fs::write(certificate, certificate_pem)
+    crate::secure_storage::write_public(certificate, certificate_pem.as_bytes())
         .map_err(|error| format!("could not save media certificate: {error}"))?;
-    fs::write(private_key, key.serialize_pem())
+    crate::secure_storage::write(private_key, key.serialize_pem().as_bytes())
         .map_err(|error| format!("could not save media private key: {error}"))?;
     Ok(())
-}
-
-fn url_host(host: &str) -> String {
-    match host.parse::<IpAddr>() {
-        Ok(IpAddr::V6(_)) => format!("[{host}]"),
-        _ => host.to_owned(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn formats_ipv6_for_urls() {
-        assert_eq!(url_host("192.168.1.4"), "192.168.1.4");
-        assert_eq!(url_host("fe80::1"), "[fe80::1]");
-    }
 }

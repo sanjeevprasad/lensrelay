@@ -17,6 +17,7 @@ class PairingPayloadTest {
         assertEquals("192.168.1.20", payload.host)
         assertEquals(53_417, payload.port)
         assertEquals("ab".repeat(32), payload.mediaCertificateFingerprint)
+        assertEquals("421 799", payload.confirmationCode)
     }
 
     @Test

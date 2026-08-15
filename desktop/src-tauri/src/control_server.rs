@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::{pairing::DesktopIdentity, pairing_server};
+use crate::{media_auth::MediaAuthorizer, pairing::DesktopIdentity, pairing_server};
 
 pub const CONTROL_PORT: u16 = 53_419;
 const CONTROL_DOMAIN: &str = "lensrelay-phone-control-v1";
@@ -188,13 +188,13 @@ struct Hello {
 }
 
 pub fn start(
-    certificate_path: &Path,
-    private_key_path: &Path,
+    host: &str,
+    tls: Arc<ServerConfig>,
     identity: Arc<DesktopIdentity>,
+    media_auth: Arc<MediaAuthorizer>,
     hub: Arc<ControlHub>,
 ) -> Result<(), String> {
-    let tls = Arc::new(load_tls_config(certificate_path, private_key_path)?);
-    let listener = TcpListener::bind(("0.0.0.0", CONTROL_PORT))
+    let listener = TcpListener::bind((host, CONTROL_PORT))
         .map_err(|error| format!("could not listen on control port {CONTROL_PORT}: {error}"))?;
     thread::Builder::new()
         .name("lensrelay-control-listener".to_owned())
@@ -204,11 +204,14 @@ pub fn start(
                     Ok(stream) => {
                         let tls = tls.clone();
                         let identity = identity.clone();
+                        let media_auth = media_auth.clone();
                         let hub = hub.clone();
                         let _ = thread::Builder::new()
                             .name("lensrelay-control-connection".to_owned())
                             .spawn(move || {
-                                if let Err(error) = handle_connection(stream, tls, identity, hub) {
+                                if let Err(error) =
+                                    handle_connection(stream, tls, identity, media_auth, hub)
+                                {
                                     eprintln!("LensRelay control connection ended: {error}");
                                 }
                             });
@@ -225,6 +228,7 @@ fn handle_connection(
     stream: TcpStream,
     tls_config: Arc<ServerConfig>,
     identity: Arc<DesktopIdentity>,
+    media_auth: Arc<MediaAuthorizer>,
     hub: Arc<ControlHub>,
 ) -> Result<(), String> {
     stream
@@ -241,12 +245,14 @@ fn handle_connection(
     let hello: Hello = serde_json::from_str(&hello_line)
         .map_err(|error| format!("invalid control hello: {error}"))?;
     let phone_name = verify_hello(&hello, &identity)?;
+    let media_token = media_auth.publisher_token(&hello.receiver_id)?;
     write_message(
         reader.get_mut(),
         &json!({
             "type": "helloAck",
             "version": 1,
             "receiverId": identity.receiver_id(),
+            "mediaToken": media_token,
         }),
     )?;
 
@@ -386,7 +392,7 @@ fn control_challenge(receiver_id: &str, phone_id: &str, nonce: &str, issued_at: 
     bytes
 }
 
-fn load_tls_config(
+pub(crate) fn load_tls_config(
     certificate_path: &Path,
     private_key_path: &Path,
 ) -> Result<ServerConfig, String> {

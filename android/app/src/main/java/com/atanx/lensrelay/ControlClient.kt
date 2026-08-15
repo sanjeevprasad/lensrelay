@@ -20,6 +20,7 @@ import javax.net.ssl.X509TrustManager
 class ControlClient(
     private val desktop: PairedDesktop,
     private val identity: PhoneIdentity,
+    private val onMediaAuthorization: (String) -> Unit,
     private val onConnected: (Boolean) -> Unit,
     private val onCommand: (String, JSONObject, Responder) -> Unit,
 ) {
@@ -97,6 +98,12 @@ class ControlClient(
             val acknowledgement = JSONObject(input.readLine() ?: error("Desktop closed during authentication"))
             check(acknowledgement.optString("type") == "helloAck") { "Desktop rejected control authentication" }
             check(acknowledgement.optString("receiverId") == desktop.receiverId) { "Desktop identity changed" }
+            acknowledgement.getString("mediaToken").also { token ->
+                require(token.length in 32..8192 && token.count { it == '.' } == 2) {
+                    "Desktop returned an invalid media authorization"
+                }
+                onMediaAuthorization(token)
+            }
 
             onConnected(true)
             write(output, JSONObject().put("type", "capabilities").put("payload", capabilities))

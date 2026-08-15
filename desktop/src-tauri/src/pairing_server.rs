@@ -14,10 +14,12 @@ use p256::{
     ecdsa::{signature::Verifier, Signature, VerifyingKey},
     pkcs8::DecodePublicKey,
 };
+use rustls::{ServerConfig, ServerConnection, StreamOwned};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
+    media_auth::MediaAuthorizer,
     model::{ConnectionState, PairedDevice, PairingSession, ReceiverStatus},
     pairing::{decode_payload, DesktopIdentity, PairingPayload},
 };
@@ -74,13 +76,15 @@ pub(crate) struct StoredPhone {
 }
 
 pub fn start(
+    host: &str,
     sessions: Arc<Mutex<Option<PairingSession>>>,
     receiver: Arc<Mutex<ReceiverStatus>>,
     identity: Arc<DesktopIdentity>,
+    tls: Arc<ServerConfig>,
+    media_auth: Arc<MediaAuthorizer>,
 ) -> Result<(String, u16), String> {
-    let listener = TcpListener::bind(("0.0.0.0", PAIRING_PORT))
+    let listener = TcpListener::bind((host, PAIRING_PORT))
         .map_err(|error| format!("could not listen on pairing port {PAIRING_PORT}: {error}"))?;
-    let host = local_ipv4()?;
     let address = format!("{host}:{PAIRING_PORT}");
     if let Ok(mut status) = receiver.lock() {
         status.listen_address = Some(address);
@@ -91,25 +95,42 @@ pub fn start(
         .spawn(move || {
             for connection in listener.incoming() {
                 match connection {
-                    Ok(stream) => handle_connection(stream, &sessions, &receiver, &identity),
+                    Ok(stream) => handle_connection(
+                        stream,
+                        &sessions,
+                        &receiver,
+                        &identity,
+                        tls.clone(),
+                        &media_auth,
+                    ),
                     Err(error) => eprintln!("LensRelay pairing listener error: {error}"),
                 }
             }
         })
         .map_err(|error| format!("could not start pairing listener: {error}"))?;
 
-    Ok((host, PAIRING_PORT))
+    Ok((host.to_owned(), PAIRING_PORT))
 }
 
 fn handle_connection(
-    mut stream: TcpStream,
+    stream: TcpStream,
     sessions: &Arc<Mutex<Option<PairingSession>>>,
     receiver: &Arc<Mutex<ReceiverStatus>>,
     identity: &Arc<DesktopIdentity>,
+    tls: Arc<ServerConfig>,
+    media_auth: &Arc<MediaAuthorizer>,
 ) {
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
-    let result = process_request(&stream, sessions, receiver, identity);
+    let connection = match ServerConnection::new(tls) {
+        Ok(connection) => connection,
+        Err(error) => {
+            eprintln!("LensRelay pairing TLS error: {error}");
+            return;
+        }
+    };
+    let mut stream = StreamOwned::new(connection, stream);
+    let result = process_request(&mut stream, sessions, receiver, identity, media_auth);
     if let Ok(encoded) = serde_json::to_vec(
         &result.unwrap_or_else(|error| serde_json::json!({ "ok": false, "message": error })),
     ) {
@@ -118,11 +139,12 @@ fn handle_connection(
     }
 }
 
-fn process_request(
-    stream: &TcpStream,
+fn process_request<R: Read>(
+    stream: &mut R,
     sessions: &Arc<Mutex<Option<PairingSession>>>,
     receiver: &Arc<Mutex<ReceiverStatus>>,
     identity: &DesktopIdentity,
+    media_auth: &MediaAuthorizer,
 ) -> Result<serde_json::Value, String> {
     let mut request_line = String::new();
     BufReader::new(stream)
@@ -136,7 +158,7 @@ fn process_request(
         .map_err(|error| format!("invalid pairing request: {error}"))?;
 
     match kind.request_type.as_str() {
-        "" | "pair" => process_pairing_request(&request_line, sessions, receiver),
+        "" | "pair" => process_pairing_request(&request_line, sessions, receiver, media_auth),
         "unpair" => process_unpair_request(&request_line, receiver, identity),
         _ => return Err("unsupported LensRelay request type".to_owned()),
     }
@@ -146,6 +168,7 @@ fn process_pairing_request(
     request_line: &str,
     sessions: &Arc<Mutex<Option<PairingSession>>>,
     receiver: &Arc<Mutex<ReceiverStatus>>,
+    media_auth: &MediaAuthorizer,
 ) -> Result<serde_json::Value, String> {
     let request: PairingRequest = serde_json::from_str(&request_line)
         .map_err(|error| format!("invalid pairing request: {error}"))?;
@@ -157,6 +180,7 @@ fn process_pairing_request(
         .ok_or_else(|| "there is no active pairing code".to_owned())?;
     let payload = decode_payload(&session)?;
     verify_request(&request, &payload)?;
+    let media_token = media_auth.publisher_token(&payload.receiver_id)?;
 
     let mut active = sessions
         .lock()
@@ -172,7 +196,14 @@ fn process_pairing_request(
         .map_err(|_| "receiver state is unavailable".to_owned())?;
     status.connection_state = ConnectionState::Paired;
     status.device_name = Some(request.phone_name.clone());
-    Ok(serde_json::json!({ "ok": true, "message": "Phone paired" }))
+    Ok(serde_json::json!({
+        "ok": true,
+        "message": "Phone paired",
+        "receiverId": request.receiver_id,
+        "phoneId": request.phone_id,
+        "nonce": request.nonce,
+        "mediaToken": media_token,
+    }))
 }
 
 fn process_unpair_request(
@@ -312,19 +343,12 @@ fn save_phones(phones: &[StoredPhone]) -> Result<(), String> {
         .map_err(|error| format!("could not create desktop config directory: {error}"))?;
     let encoded = serde_json::to_vec_pretty(phones)
         .map_err(|error| format!("could not encode paired phones: {error}"))?;
-    fs::write(&path, encoded).map_err(|error| format!("could not save paired phone: {error}"))?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
-            .map_err(|error| format!("could not protect paired phones: {error}"))?;
-    }
-    Ok(())
+    crate::secure_storage::write(&path, &encoded)
+        .map_err(|error| format!("could not save paired phone: {error}"))
 }
 
 pub(crate) fn load_phones() -> Result<Vec<StoredPhone>, String> {
-    match fs::read(phones_path()?) {
+    match crate::secure_storage::read(&phones_path()?) {
         Ok(bytes) => serde_json::from_slice(&bytes)
             .map_err(|error| format!("could not parse paired phones: {error}")),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
@@ -419,7 +443,7 @@ fn decode(value: &str, label: &str) -> Result<Vec<u8>, String> {
         .map_err(|_| format!("invalid {label}"))
 }
 
-fn local_ipv4() -> Result<String, String> {
+pub fn select_lan_ipv4() -> Result<String, String> {
     let socket = UdpSocket::bind("0.0.0.0:0")
         .map_err(|error| format!("could not inspect the local network: {error}"))?;
     socket
@@ -428,10 +452,15 @@ fn local_ipv4() -> Result<String, String> {
     let address = socket
         .local_addr()
         .map_err(|error| format!("could not determine the local address: {error}"))?;
-    if address.ip().is_loopback() {
-        return Err("no LAN address is available".to_owned());
-    }
-    Ok(address.ip().to_string())
+    let ip = match address.ip() {
+        std::net::IpAddr::V4(ip) if ip.is_private() || ip.is_link_local() => ip,
+        other => {
+            return Err(format!(
+                "default network interface {other} is not a private LAN interface"
+            ))
+        }
+    };
+    Ok(ip.to_string())
 }
 
 #[cfg(test)]

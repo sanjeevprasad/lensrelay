@@ -32,6 +32,7 @@ pub struct PairingSession {
     pub receiver_id: String,
     pub receiver_name: String,
     pub fingerprint: String,
+    pub confirmation_code: String,
     pub expires_at: u64,
 }
 

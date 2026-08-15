@@ -50,6 +50,9 @@
     <string name="local_network_permission_needed">Allow local network access to confirm pairing…</string>
     <string name="local_network_permission_denied">Local network access is required to pair with your desktop.</string>
     <string name="confirming_pairing">Confirming securely with the desktop…</string>
+    <string name="confirm_pairing_title">Confirm this computer</string>
+    <string name="confirm_pairing_message">Make sure this security code matches LensRelay Desktop:\n\n%1$s\n\nComputer: %2$s</string>
+    <string name="codes_match">Codes match</string>
     <string name="desktop_unreachable">Could not reach LensRelay Desktop. Check that both devices are on the same Wi‑Fi network.</string>
     <string name="unknown_phone">Android phone</string>
     <string name="cancel">Cancel</string>

@@ -429,6 +429,28 @@ class MainActivity : AppCompatActivity() {
 
         pairingInProgress = true
         imageAnalysis?.clearAnalyzer()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.confirm_pairing_title)
+            .setMessage(
+                getString(
+                    R.string.confirm_pairing_message,
+                    payload.confirmationCode,
+                    payload.receiverName,
+                ),
+            )
+            .setNegativeButton(R.string.cancel) { _, _ ->
+                pairingInProgress = false
+                bindQrScanner()
+            }
+            .setPositiveButton(R.string.codes_match) { _, _ -> continuePairing(payload) }
+            .setOnCancelListener {
+                pairingInProgress = false
+                bindQrScanner()
+            }
+            .show()
+    }
+
+    private fun continuePairing(payload: PairingPayload) {
         if (needsLocalNetworkPermission()) {
             pendingPairingPayload = payload
             updateStatus(getString(R.string.local_network_permission_needed))
@@ -445,7 +467,8 @@ class MainActivity : AppCompatActivity() {
                 val phoneName = Build.MODEL.trim().ifEmpty { getString(R.string.unknown_phone) }
                     .take(80)
                 val proof = phoneIdentity.createPairingProof(payload, phoneName)
-                PairingClient.pair(payload, proof, phoneName)
+                val mediaToken = PairingClient.pair(payload, proof, phoneName)
+                payload.copy(mediaToken = mediaToken)
             }
 
             runOnUiThread {
@@ -462,7 +485,8 @@ class MainActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
 
-                val desktop = runCatching { pairingStore.save(payload) }.getOrElse { error ->
+                val confirmedPayload = result.getOrThrow()
+                val desktop = runCatching { pairingStore.save(confirmedPayload) }.getOrElse { error ->
                     Log.e(TAG, "Unable to store paired desktop", error)
                     pairingInProgress = false
                     showMessage(getString(R.string.pairing_store_failed))
@@ -668,7 +692,8 @@ class MainActivity : AppCompatActivity() {
             item.desktopName.text = desktop.receiverName
             val hasEndpoint = desktop.host.isNotEmpty() &&
                 desktop.port in 1..65535 &&
-                desktop.mediaCertificateFingerprint.length == 64
+                desktop.mediaCertificateFingerprint.length == 64 &&
+                desktop.mediaToken.isNotEmpty()
             item.desktopStatus.setText(
                 when {
                     !hasEndpoint -> R.string.pair_again_to_stream
@@ -978,6 +1003,9 @@ class MainActivity : AppCompatActivity() {
         controlClient = ControlClient(
             desktop = desktop,
             identity = phoneIdentity,
+            onMediaAuthorization = { token ->
+                pairingStore.setMediaToken(desktop.receiverId, token)
+            },
             onConnected = { connected ->
                 runOnUiThread {
                     if (generation != controlGeneration) return@runOnUiThread

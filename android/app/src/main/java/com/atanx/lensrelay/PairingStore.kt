@@ -21,6 +21,7 @@ data class PairedDesktop(
     val port: Int,
     val controlPort: Int,
     val mediaCertificateFingerprint: String,
+    val mediaToken: String,
     val pairedAt: Long,
     val preferredCamera: CameraLens,
     val allowRemoteStart: Boolean,
@@ -46,6 +47,7 @@ class PairingStore(context: Context) {
                         port = item.optInt("port"),
                         controlPort = item.optInt("controlPort", DEFAULT_CONTROL_PORT),
                         mediaCertificateFingerprint = item.optString("mediaCertificateFingerprint"),
+                        mediaToken = item.optString("mediaToken"),
                         pairedAt = item.getLong("pairedAt"),
                         preferredCamera = runCatching {
                             CameraLens.valueOf(item.optString("preferredCamera"))
@@ -68,6 +70,7 @@ class PairingStore(context: Context) {
             port = payload.port,
             controlPort = payload.controlPort,
             mediaCertificateFingerprint = payload.mediaCertificateFingerprint,
+            mediaToken = payload.mediaToken,
             pairedAt = System.currentTimeMillis(),
             preferredCamera = pairings
                 .firstOrNull { it.receiverId == payload.receiverId }
@@ -103,6 +106,9 @@ class PairingStore(context: Context) {
     fun setAllowRemoteStart(receiverId: String, allowed: Boolean): PairedDesktop? =
         update(receiverId) { it.copy(allowRemoteStart = allowed) }
 
+    fun setMediaToken(receiverId: String, token: String): PairedDesktop? =
+        update(receiverId) { it.copy(mediaToken = token) }
+
     private fun update(receiverId: String, transform: (PairedDesktop) -> PairedDesktop): PairedDesktop? {
         var updated: PairedDesktop? = null
         val pairings = load().map { desktop ->
@@ -131,6 +137,7 @@ class PairingStore(context: Context) {
         .put("port", port)
         .put("controlPort", controlPort)
         .put("mediaCertificateFingerprint", mediaCertificateFingerprint)
+        .put("mediaToken", mediaToken)
         .put("pairedAt", pairedAt)
         .put("preferredCamera", preferredCamera.name)
         .put("allowRemoteStart", allowRemoteStart)

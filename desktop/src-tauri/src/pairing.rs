@@ -38,7 +38,7 @@ pub(crate) struct PairingPayload {
 impl DesktopIdentity {
     pub fn load_or_create() -> Result<Self, String> {
         let path = identity_path()?;
-        let key_bytes = match fs::read(&path) {
+        let key_bytes = match crate::secure_storage::read(&path) {
             Ok(bytes) => bytes
                 .try_into()
                 .map_err(|_| "desktop identity has an invalid length".to_owned())?,
@@ -74,6 +74,8 @@ impl DesktopIdentity {
         getrandom::fill(&mut nonce)
             .map_err(|error| format!("could not generate pairing nonce: {error}"))?;
         let expires_at = unix_time()?.saturating_add(PAIRING_LIFETIME_SECONDS);
+        let confirmation_code =
+            confirmation_code(&public_key, &nonce, media_certificate_fingerprint);
 
         let payload_json = serde_json::to_vec(&PairingPayload {
             version: 1,
@@ -97,6 +99,7 @@ impl DesktopIdentity {
             receiver_id,
             receiver_name,
             fingerprint,
+            confirmation_code,
             expires_at,
         })
     }
@@ -135,14 +138,8 @@ fn persist_identity(path: &PathBuf, bytes: &[u8; 32]) -> Result<(), String> {
         .ok_or_else(|| "desktop identity path has no parent".to_owned())?;
     fs::create_dir_all(parent)
         .map_err(|error| format!("could not create desktop config directory: {error}"))?;
-    fs::write(path, bytes).map_err(|error| format!("could not save desktop identity: {error}"))?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
-            .map_err(|error| format!("could not protect desktop identity: {error}"))?;
-    }
+    crate::secure_storage::write(path, bytes)
+        .map_err(|error| format!("could not save desktop identity: {error}"))?;
 
     Ok(())
 }
@@ -177,6 +174,25 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn confirmation_code(
+    public_key: &[u8],
+    nonce: &[u8],
+    media_certificate_fingerprint: &str,
+) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"lensrelay-confirm-v1\0");
+    digest.update(public_key);
+    digest.update(nonce);
+    digest.update(
+        media_certificate_fingerprint
+            .to_ascii_lowercase()
+            .as_bytes(),
+    );
+    let bytes = digest.finalize();
+    let number = u32::from_be_bytes(bytes[..4].try_into().expect("SHA-256 prefix")) % 1_000_000;
+    format!("{:03} {:03}", number / 1_000, number % 1_000)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,5 +223,17 @@ mod tests {
         assert_eq!(value["port"], 53_417);
         assert_eq!(value["controlPort"], 53_419);
         assert_eq!(value["mediaCertificateFingerprint"], "ab".repeat(32));
+    }
+
+    #[test]
+    fn confirmation_code_matches_android() {
+        assert_eq!(
+            confirmation_code(
+                &std::array::from_fn::<u8, 32, _>(|index| index as u8),
+                &[9; 24],
+                &"ab".repeat(32),
+            ),
+            "421 799"
+        );
     }
 }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.net.URLEncoder
 
 class MoqStreamSession(
     private val context: Context,
@@ -125,7 +126,8 @@ class MoqStreamSession(
 
     private fun mediaUrl(): String {
         val host = if (desktop.host.contains(':')) "[${desktop.host}]" else desktop.host
-        return "https://$host:$MEDIA_PORT/lensrelay/${desktop.receiverId}"
+        val token = URLEncoder.encode(desktop.mediaToken, Charsets.UTF_8.name())
+        return "https://$host:$MEDIA_PORT/lensrelay/${desktop.receiverId}?jwt=$token"
     }
 
     companion object {

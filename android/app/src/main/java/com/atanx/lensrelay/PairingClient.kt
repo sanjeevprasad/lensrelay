@@ -3,6 +3,12 @@ package com.atanx.lensrelay
 import org.json.JSONObject
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.X509TrustManager
 
 object PairingClient {
     private const val PROTOCOL_VERSION = 1
@@ -13,7 +19,7 @@ object PairingClient {
         payload: PairingPayload,
         proof: PhonePairingProof,
         phoneName: String,
-    ) {
+    ): String {
         val request = JSONObject()
             .put("version", PROTOCOL_VERSION)
             .put("receiverId", payload.receiverId)
@@ -26,9 +32,28 @@ object PairingClient {
             .put("signature", proof.signature)
             .toString()
 
-        val response = exchange(payload.host, payload.port, request)
+        val response = exchange(
+            payload.host,
+            payload.port,
+            payload.mediaCertificateFingerprint,
+            request,
+        )
         check(response.optBoolean("ok")) {
             response.optString("message", "The desktop rejected pairing.")
+        }
+        check(response.optString("receiverId") == payload.receiverId) {
+            "The pairing acknowledgement came from a different desktop."
+        }
+        check(response.optString("phoneId") == proof.identity.phoneId) {
+            "The pairing acknowledgement is for a different phone."
+        }
+        check(response.optString("nonce") == payload.nonce) {
+            "The pairing acknowledgement is stale."
+        }
+        return response.getString("mediaToken").also { token ->
+            require(token.length in 32..8192 && token.count { it == '.' } == 2) {
+                "The desktop returned an invalid media authorization."
+            }
         }
     }
 
@@ -43,7 +68,12 @@ object PairingClient {
             .put("nonce", proof.nonce)
             .put("signature", proof.signature)
             .toString()
-        val response = exchange(desktop.host, desktop.port, request)
+        val response = exchange(
+            desktop.host,
+            desktop.port,
+            desktop.mediaCertificateFingerprint,
+            request,
+        )
         check(response.optBoolean("ok")) {
             response.optString("message", "The desktop rejected the unpair request.")
         }
@@ -64,10 +94,15 @@ object PairingClient {
         )
     }
 
-    private fun exchange(host: String, port: Int, request: String): JSONObject {
-        Socket().use { socket ->
-            socket.connect(InetSocketAddress(host, port), TIMEOUT_MILLIS)
+    private fun exchange(
+        host: String,
+        port: Int,
+        certificateFingerprint: String,
+        request: String,
+    ): JSONObject {
+        createSocket(host, port, certificateFingerprint).use { socket ->
             socket.soTimeout = TIMEOUT_MILLIS
+            socket.startHandshake()
             val writer = socket.getOutputStream().bufferedWriter(Charsets.UTF_8)
             writer.write(request)
             writer.newLine()
@@ -82,5 +117,28 @@ object PairingClient {
             }
             return JSONObject(responseLine)
         }
+    }
+
+    private fun createSocket(host: String, port: Int, fingerprint: String): SSLSocket {
+        val expectedFingerprint = fingerprint.lowercase()
+        val trustManager = object : X509TrustManager {
+            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) = Unit
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+                require(chain.isNotEmpty()) { "Desktop did not present a TLS certificate" }
+                val actual = MessageDigest.getInstance("SHA-256")
+                    .digest(chain[0].encoded)
+                    .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                require(actual == expectedFingerprint) {
+                    "Desktop TLS certificate does not match the scanned QR code"
+                }
+            }
+        }
+        val context = SSLContext.getInstance("TLS")
+        context.init(null, arrayOf(trustManager), SecureRandom())
+        val transport = Socket().apply {
+            connect(InetSocketAddress(host, port), TIMEOUT_MILLIS)
+        }
+        return context.socketFactory.createSocket(transport, host, port, true) as SSLSocket
     }
 }

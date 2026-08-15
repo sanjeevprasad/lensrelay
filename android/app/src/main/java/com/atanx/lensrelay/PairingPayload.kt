@@ -15,7 +15,20 @@ data class PairingPayload(
     val port: Int,
     val controlPort: Int,
     val mediaCertificateFingerprint: String,
+    val mediaToken: String = "",
 ) {
+    val confirmationCode: String
+        get() {
+            val digest = MessageDigest.getInstance("SHA-256")
+            digest.update("lensrelay-confirm-v1\u0000".toByteArray(Charsets.UTF_8))
+            digest.update(decodeUrlSafe(publicKey, "desktop public key"))
+            digest.update(decodeUrlSafe(nonce, "pairing nonce"))
+            digest.update(mediaCertificateFingerprint.lowercase().toByteArray(Charsets.UTF_8))
+            val value = java.nio.ByteBuffer.wrap(digest.digest(), 0, 4).int.toLong() and 0xffffffffL
+            val code = value % 1_000_000
+            return "%03d %03d".format(code / 1_000, code % 1_000)
+        }
+
     companion object {
         private const val PREFIX = "lensrelay:pair:"
         private const val VERSION = 1
