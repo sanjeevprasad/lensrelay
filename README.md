@@ -43,9 +43,10 @@ CameraX -> MediaCodec -> transport -> receiver -> decoder -> frame pipeline
                                                         `-> Linux v4l2loopback
 ```
 
-- The Android application will be written in Kotlin using CameraX and
-  MediaCodec.
-- The shared desktop receiver and platform adapters will be written in Rust.
+- The Android application is written in Kotlin using CameraX; MediaCodec
+  streaming is the next camera-pipeline milestone.
+- The Tauri desktop application uses a TypeScript UI and a shared Rust receiver
+  boundary with platform-specific adapters.
 - Linux will use the existing `v4l2loopback` kernel module; LensRelay does not
   plan to maintain a custom kernel module for the initial release.
 - Windows 11 will use the Media Foundation virtual-camera APIs.
@@ -62,8 +63,12 @@ protocol/  Wire protocol specification and interoperability material
 docs/      Architecture, roadmap, and project documentation
 ```
 
-The repository is documentation-first while the initial prototypes establish
-the protocol, latency budget, and platform constraints.
+The repository currently contains a working Android camera-preview prototype
+and a Tauri desktop shell. They do not communicate yet; the initial protocol,
+encoder, transport, and virtual-camera implementations remain in development.
+
+Build instructions are in the [Android](android/README.md) and
+[desktop](desktop/README.md) component guides.
 
 ## Contributing
 

@@ -18,12 +18,12 @@ LensRelay has three logical layers:
 
 ```text
 ┌──────────────────────── Android ────────────────────────┐
-│ CameraX -> MediaCodec -> session and transport          │
+│ CameraX -> hardware H.264 -> WebRTC media + DataChannel │
 └──────────────────────────────┬───────────────────────────┘
                                │ local Wi-Fi (MVP)
 ┌──────────────────────────────▼───────────────────────────┐
-│ Rust desktop core                                       │
-│ pairing -> receive -> decode -> timing -> frame pipeline │
+│ Rust desktop core                                        │
+│ pairing -> WebRTC receive -> decode -> timing -> frames  │
 └─────────────────────┬──────────────────────┬─────────────┘
                       │                      │
               ┌───────▼────────┐     ┌───────▼────────────┐
@@ -46,6 +46,18 @@ phone's hardware encoder.
 The desktop core owns discovery, pairing, session state, transport, decoding,
 frame pacing, reconnection, diagnostics, and shared configuration. It must not
 depend directly on a Linux or Windows virtual-camera API.
+
+### Local WebRTC transport
+
+The MVP uses peer-to-peer WebRTC over the local Wi-Fi network. H.264 is the
+preferred video codec so the phone and desktop can use hardware acceleration.
+A WebRTC data channel carries session state and camera controls such as lens,
+torch, and quality changes.
+
+Discovery and signaling remain local. The MVP does not use public signaling,
+STUN, TURN, or cloud media relays. WebRTC supplies encrypted DTLS/SRTP media,
+packet-loss handling, congestion feedback, and codec negotiation; it does not
+own desktop decoding or the virtual-camera frame sink.
 
 ### Virtual-camera adapters
 
@@ -76,15 +88,16 @@ platform capability discovery may require separate interfaces.
 - Require explicit pairing before a receiver can access camera data.
 - Display capture state on the phone.
 - Do not depend on internet access for discovery, pairing, or streaming.
+- Restrict WebRTC to local candidates for the Wi-Fi-only MVP.
 - Do not log video, audio, credentials, or reusable pairing secrets.
 - Threat-model local-network attackers before stabilizing the protocol.
 
 ## Open decisions
 
-- Transport and discovery mechanism
+- Local discovery and WebRTC signaling mechanism
+- Rust WebRTC implementation and Android native integration
 - Pairing and session key exchange
 - Decoder implementation and distribution strategy
-- Desktop UI toolkit
 - Pixel format at the frame-sink boundary
 - Android minimum version after device testing
 - Packaging and signing for Windows and major Linux distributions

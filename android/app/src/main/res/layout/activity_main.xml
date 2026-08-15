@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:contentDescription="@string/camera_preview"
+        android:focusable="true"
+        android:visibility="invisible"
+        app:implementationMode="performance"
+        app:scaleType="fillCenter" />
+
+    <ScrollView
+        android:id="@+id/homePanel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:padding="32dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ImageView
+                android:layout_width="88dp"
+                android:layout_height="88dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_lensrelay" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:gravity="center"
+                android:text="@string/home_title"
+                android:textAppearance="@style/TextAppearance.Material3.HeadlineMedium"
+                android:textColor="@color/lensrelay_white" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center"
+                android:text="@string/wifi_description"
+                android:textAppearance="@style/TextAppearance.Material3.BodyLarge"
+                android:textColor="@color/lensrelay_text_secondary" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                app:cardBackgroundColor="@color/lensrelay_surface"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/lensrelay_green_muted"
+                app:strokeWidth="1dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:drawablePadding="12dp"
+                    android:gravity="center_vertical"
+                    android:padding="18dp"
+                    android:text="@string/local_privacy_message"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                    android:textColor="@color/lensrelay_white" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/pairedDesktopCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:visibility="gone"
+                app:cardBackgroundColor="@color/lensrelay_surface"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="18dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/paired_computer"
+                        android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                        android:textColor="@color/lensrelay_green" />
+
+                    <TextView
+                        android:id="@+id/pairedDesktopName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                        android:textColor="@color/lensrelay_white" />
+
+                    <TextView
+                        android:id="@+id/pairedDesktopStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/desktop_identity_saved"
+                        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                        android:textColor="@color/lensrelay_text_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/scanPairingQrButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="@string/scan_pairing_qr" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/startCameraButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/preview_camera" />
+        </LinearLayout>
+    </ScrollView>
+
+    <View
+        android:id="@+id/scannerFrame"
+        android:layout_width="240dp"
+        android:layout_height="240dp"
+        android:layout_gravity="center"
+        android:background="@drawable/qr_scan_frame"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/scannerControls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/control_panel_background"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="18dp"
+        android:paddingBottom="24dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/scan_qr_instructions"
+            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+            android:textColor="@color/lensrelay_white" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/cancelScannerButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/cancel" />
+    </LinearLayout>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/statusCard"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_margin="16dp"
+        android:visibility="gone"
+        app:cardBackgroundColor="@color/lensrelay_overlay"
+        app:cardCornerRadius="18dp"
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp">
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:drawablePadding="8dp"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
+            android:text="@string/camera_permission_needed"
+            android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+            android:textColor="@color/lensrelay_white" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <LinearLayout
+        android:id="@+id/permissionPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginHorizontal="32dp"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <ImageView
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_lensrelay" />
+
+        <TextView
+            android:id="@+id/permissionTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:gravity="center"
+            android:text="@string/permission_title"
+            android:textAppearance="@style/TextAppearance.Material3.HeadlineSmall"
+            android:textColor="@color/lensrelay_white" />
+
+        <TextView
+            android:id="@+id/permissionExplanation"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:text="@string/permission_explanation"
+            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+            android:textColor="@color/lensrelay_text_secondary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/grantPermissionButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/grant_camera_permission" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/cancelPermissionButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/not_now" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/cameraControls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/control_panel_background"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="18dp"
+        android:paddingBottom="24dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/zoom"
+                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+                android:textColor="@color/lensrelay_white" />
+
+            <SeekBar
+                android:id="@+id/zoomSlider"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="12dp"
+                android:layout_weight="1"
+                android:max="100"
+                android:progress="0" />
+
+            <TextView
+                android:id="@+id/zoomValue"
+                android:layout_width="56dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="@string/zoom_default"
+                android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+                android:textColor="@color/lensrelay_white" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/focusHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:text="@string/focus_hint"
+            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+            android:textColor="@color/lensrelay_text_secondary" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/switchCameraButton"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/switch_camera" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/torchButton"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/torch_off" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/stopCameraButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/stop_camera" />
+    </LinearLayout>
+
+</FrameLayout>

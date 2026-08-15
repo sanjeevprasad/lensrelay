@@ -9,11 +9,11 @@ end-to-end prototype establishes realistic effort and compatibility.
 - [ ] Register and feed a Media Foundation virtual camera on Windows 11.
 - [ ] Capture and hardware-encode H.264 on representative Android devices.
 - [ ] Measure end-to-end latency over a local Wi-Fi network.
-- [ ] Select the initial transport and document the decision.
+- [x] Select WebRTC as the initial transport and document the decision.
 
 ## Phase 1: minimal end-to-end webcam
 
-- [ ] Pair one Android phone with one desktop receiver.
+- [ ] Complete mutual pairing between one Android phone and one desktop receiver.
 - [ ] Stream H.264 video at 720p and 1080p.
 - [ ] Expose the stream as a webcam on Windows 11 and Linux.
 - [ ] Support front/back camera selection, focus, zoom, and torch.
