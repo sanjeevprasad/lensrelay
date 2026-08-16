@@ -222,6 +222,20 @@
           <p class="mb-2 text-xs font-bold uppercase tracking-[0.13em] text-[#7f9b8f]">Virtual camera</p>
           <h3 id="adapter-name" class="mb-2 text-lg font-semibold tracking-tight">Detecting platform…</h3>
           <p id="adapter-detail" class="leading-6 text-lens-muted">Checking host capabilities</p>
+          <div id="virtual-camera-help" class="mt-4 rounded-xl border border-[#34483f] bg-[#111815] p-4" hidden>
+            <p class="text-sm font-semibold text-[#d8e9e2]">Linux setup required</p>
+            <p class="mt-2 text-sm leading-6 text-lens-muted">
+              Install <code class="text-[#a6e8ce]">v4l2loopback-dkms</code>, reboot after a kernel upgrade, then run:
+            </p>
+            <code class="mt-3 block overflow-x-auto rounded-lg bg-black/30 p-3 text-xs leading-5 text-[#a6e8ce]">sudo modprobe v4l2loopback devices=1 card_label="LensRelay Camera" exclusive_caps=1</code>
+            <p class="mt-2 text-xs leading-5 text-lens-muted">
+              Run this in a terminal. LensRelay itself remains unprivileged and never receives your password.
+            </p>
+          </div>
+          <button id="virtual-camera-test" type="button" class="mt-4 cursor-pointer rounded-xl bg-[#273a32] px-4 py-2.5 text-sm font-bold text-[#d8e9e2] hover:bg-[#31483e] disabled:cursor-not-allowed disabled:opacity-40" hidden>
+            Test virtual camera
+          </button>
+          <p id="virtual-camera-error" class="mt-3 text-sm text-[#ffaaa3]" aria-live="polite"></p>
         </article>
         </section>
       </details>

@@ -21,6 +21,7 @@ pub struct PlatformInfo {
     pub operating_system: &'static str,
     pub adapter_name: &'static str,
     pub adapter_available: bool,
+    pub adapter_running: bool,
     pub detail: String,
 }
 

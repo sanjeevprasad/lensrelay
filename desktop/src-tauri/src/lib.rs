@@ -21,6 +21,7 @@ pub struct AppState {
     pairing_port: u16,
     control_port: u16,
     control: Arc<control_server::ControlHub>,
+    virtual_camera: Arc<dyn platform::VirtualCameraAdapter>,
     media_endpoint: String,
     media_certificate_fingerprint: String,
 }
@@ -70,6 +71,7 @@ impl AppState {
             control.clone(),
         )?;
         let subscriber_token = media_auth.subscriber_token(&receiver_id)?;
+        let virtual_camera = platform::current();
         Ok(Self {
             receiver,
             pairing_session,
@@ -78,6 +80,7 @@ impl AppState {
             pairing_port,
             control_port: control_server::CONTROL_PORT,
             control,
+            virtual_camera,
             media_endpoint: format!("{}?jwt={subscriber_token}", media_relay.endpoint),
             media_certificate_fingerprint: media_relay.certificate_fingerprint,
         })
@@ -92,6 +95,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_receiver_status,
             commands::get_platform_info,
+            commands::set_virtual_camera_test,
+            commands::push_video_frame,
             commands::get_media_endpoint,
             commands::create_pairing_session,
             commands::report_frontend_error,

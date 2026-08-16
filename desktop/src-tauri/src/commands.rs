@@ -1,10 +1,11 @@
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use tauri::State;
 
 use crate::{
     control_server::ControlStatus,
     model::{PairedDevice, PairingSession, PlatformInfo, ReceiverStatus},
-    pairing_server, platform, AppState,
+    pairing_server, AppState,
 };
 
 #[tauri::command]
@@ -66,8 +67,36 @@ pub fn report_frontend_error(message: String) {
 }
 
 #[tauri::command]
-pub fn get_platform_info() -> PlatformInfo {
-    platform::current().info()
+pub fn get_platform_info(state: State<'_, AppState>) -> PlatformInfo {
+    state.virtual_camera.info()
+}
+
+#[tauri::command]
+pub async fn set_virtual_camera_test(
+    state: State<'_, AppState>,
+    running: bool,
+) -> Result<PlatformInfo, String> {
+    let virtual_camera = state.virtual_camera.clone();
+    tokio::task::spawn_blocking(move || virtual_camera.set_test_pattern(running))
+        .await
+        .map_err(|error| format!("virtual-camera task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn push_video_frame(
+    state: State<'_, AppState>,
+    jpeg_base64: String,
+) -> Result<(), String> {
+    let frame = STANDARD
+        .decode(jpeg_base64.as_bytes())
+        .map_err(|_| "video frame was not valid JPEG base64".to_owned())?;
+    if frame.len() > 2 * 1024 * 1024 {
+        return Err("video frame is too large".to_owned());
+    }
+    let virtual_camera = state.virtual_camera.clone();
+    tokio::task::spawn_blocking(move || virtual_camera.push_jpeg_frame(frame))
+        .await
+        .map_err(|error| format!("video-frame task failed: {error}"))?
 }
 
 #[tauri::command]

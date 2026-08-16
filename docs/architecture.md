@@ -56,8 +56,10 @@ camera commands. Pairing pins the desktop TLS certificate; the phone signs its
 control hello with its persistent Android Keystore identity. The phone is the
 authority for permissions and applied camera state.
 
-The Tauri preview validates media capture and transport. It is a prototype
-boundary, not the final virtual-camera frame path.
+The Tauri preview validates media capture and transport. The current Linux
+prototype forwards its decoded preview frames to the native V4L2 sink; a future
+native MoQ subscriber can remove that WebView frame bridge without changing the
+platform sink boundary.
 
 ### Virtual-camera adapters
 

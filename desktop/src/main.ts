@@ -14,6 +14,7 @@ interface PlatformInfo {
   operatingSystem: string;
   adapterName: string;
   adapterAvailable: boolean;
+  adapterRunning: boolean;
   detail: string;
 }
 
@@ -48,6 +49,9 @@ let lastControlConnected = false;
 let mediaTransportStatus: "offline" | "loading" | "live" = "offline";
 let phoneMediaExpected = false;
 let streamIntent: boolean | null = null;
+let frameRelayTimer: number | undefined;
+let frameRelayInFlight = false;
+let frameRelayStarted = false;
 let pairedDeviceCount: number | null = null;
 
 const requiredElement = (id: string): HTMLElement => {
@@ -89,6 +93,28 @@ function renderStatus(status: ReceiverStatus): void {
 function renderPlatform(info: PlatformInfo): void {
   requiredElement("adapter-name").textContent = info.adapterName;
   requiredElement("adapter-detail").textContent = `${info.operatingSystem} · ${info.detail}`;
+  const test = requiredElement("virtual-camera-test") as HTMLButtonElement;
+  const linux = info.operatingSystem === "Linux";
+  requiredElement("virtual-camera-help").hidden = !linux || info.adapterAvailable;
+  test.hidden = !linux || !info.adapterAvailable;
+  test.disabled = !info.adapterAvailable;
+  test.dataset.running = String(info.adapterRunning);
+  test.textContent = info.adapterRunning ? "Stop test pattern" : "Test virtual camera";
+}
+
+async function toggleVirtualCameraTest(): Promise<void> {
+  const button = requiredElement("virtual-camera-test") as HTMLButtonElement;
+  const error = requiredElement("virtual-camera-error");
+  error.textContent = "";
+  button.disabled = true;
+  try {
+    renderPlatform(await invoke<PlatformInfo>("set_virtual_camera_test", {
+      running: button.dataset.running !== "true",
+    }));
+  } catch (reason) {
+    error.textContent = String(reason);
+    renderPlatform(await invoke<PlatformInfo>("get_platform_info"));
+  }
 }
 
 function renderPairingSession(session: PairingSession): void {
@@ -176,10 +202,63 @@ function clearMediaPreview(): void {
   }
 }
 
+function stopFrameRelay(): void {
+  if (frameRelayTimer !== undefined) window.clearInterval(frameRelayTimer);
+  frameRelayTimer = undefined;
+  frameRelayInFlight = false;
+  if (frameRelayStarted) {
+    frameRelayStarted = false;
+    void invoke("set_virtual_camera_test", { running: false }).catch(() => undefined);
+  }
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function startFrameRelay(): void {
+  if (frameRelayTimer !== undefined) return;
+  const capture = (): void => {
+    if (frameRelayInFlight || !phoneMediaExpected || mediaTransportStatus !== "live") return;
+    // moq-watch creates its canvas asynchronously after becoming live. Keep
+    // the relay timer alive and discover it on each tick instead of giving up
+    // permanently when the status event wins that race.
+    const canvas = requiredElement("media-watch").querySelector("canvas");
+    if (!(canvas instanceof HTMLCanvasElement)) return;
+    frameRelayInFlight = true;
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        frameRelayInFlight = false;
+        return;
+      }
+      void blob.arrayBuffer().then((bytes) => invoke("push_video_frame", {
+        jpegBase64: bytesToBase64(new Uint8Array(bytes)),
+      })).then(() => {
+        frameRelayStarted = true;
+      }).catch((reason) => {
+        requiredElement("virtual-camera-error").textContent = String(reason);
+      }).finally(() => {
+        frameRelayInFlight = false;
+      });
+    }, "image/jpeg", 0.82);
+  };
+  frameRelayTimer = window.setInterval(capture, 66);
+  capture();
+}
+
 function syncMediaPreviewVisibility(): void {
   const visible = phoneMediaExpected && mediaTransportStatus !== "offline";
   requiredElement("live-preview-card").hidden = !visible;
-  if (!visible) clearMediaPreview();
+  if (!visible) {
+    clearMediaPreview();
+    stopFrameRelay();
+  } else if (mediaTransportStatus === "live") {
+    startFrameRelay();
+  }
 }
 
 const asStrings = (value: unknown): string[] => Array.isArray(value) ? value.map(String) : [];
@@ -384,6 +463,14 @@ async function refreshReceiverStatus(): Promise<void> {
   }
 }
 
+async function refreshPlatformInfo(): Promise<void> {
+  try {
+    renderPlatform(await invoke<PlatformInfo>("get_platform_info"));
+  } catch {
+    // Keep the last useful adapter status while a transient refresh retries.
+  }
+}
+
 async function forgetPairedDevice(phoneId: string): Promise<void> {
   await invoke("forget_paired_device", { phoneId });
   await Promise.all([refreshPairedDevices(), refreshReceiverStatus()]);
@@ -425,9 +512,11 @@ async function refreshPairedDevices(): Promise<PairedDevice[]> {
 requiredElement("show-pairing").addEventListener("click", () => void createPairingSession());
 requiredElement("refresh-pairing").addEventListener("click", () => void createPairingSession());
 requiredElement("hide-pairing").addEventListener("click", hidePairingSession);
+requiredElement("virtual-camera-test").addEventListener("click", () => void toggleVirtualCameraTest());
 configureControlEvents();
 void initialize();
 void refreshControlStatus();
 window.setInterval(() => void refreshReceiverStatus(), 1000);
+window.setInterval(() => void refreshPlatformInfo(), 2000);
 window.setInterval(() => void refreshPairedDevices(), 2000);
 window.setInterval(() => void refreshControlStatus(), 1000);
