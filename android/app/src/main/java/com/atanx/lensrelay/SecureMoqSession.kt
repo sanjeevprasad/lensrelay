@@ -2,6 +2,7 @@ package com.atanx.lensrelay
 
 import com.swmansion.moqkit.publish.Publisher
 import uniffi.moq.MoqClient
+import uniffi.moq.MoqOriginOptions
 import uniffi.moq.MoqOriginProducer
 import uniffi.moq.MoqSession
 
@@ -9,8 +10,8 @@ class SecureMoqSession(
     private val url: String,
     private val certificateFingerprint: String,
 ) {
-    private val publishOrigin = MoqOriginProducer()
-    private val consumeOrigin = MoqOriginProducer()
+    private val publishOrigin = MoqOriginProducer(MoqOriginOptions())
+    private val consumeOrigin = MoqOriginProducer(MoqOriginOptions())
     private val client = MoqClient()
     private var session: MoqSession? = null
 
@@ -25,7 +26,9 @@ class SecureMoqSession(
 
     fun publish(path: String, publisher: Publisher) {
         check(session != null) { "Media session must connect before publishing." }
-        publishOrigin.publish(path, MoqPublisherBridge.broadcast(publisher))
+        val broadcast = publishOrigin.createBroadcast(path)
+        MoqPublisherBridge.attach(publisher, broadcast)
+        broadcast.finish()
     }
 
     fun close() {

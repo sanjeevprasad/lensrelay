@@ -1,3 +1,5 @@
-# LensRelay currently relies only on AndroidX libraries whose consumer rules
-# are packaged with their artifacts. Add application-specific rules here as
-# protocol serialization and native integrations are introduced.
+# The MoQ native stack (dev.moq libmoq_ffi) is reached through uniffi-generated
+# JNA interfaces whose abstract method names are resolved as Rust symbols at
+# runtime. R8 shrinks them as unreachable, so the generated uniffi package must
+# be kept verbatim; verified against the minified release dex (234/234 symbols).
+-keep class uniffi.** { *; }
