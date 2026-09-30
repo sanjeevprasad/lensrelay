@@ -16,4 +16,16 @@ class UnpairProtocolTest {
             digest,
         )
     }
+
+    @Test
+    fun `desktop acknowledgement transcript matches desktop`() {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(UnpairProtocol.desktopAckTranscript("rid", "pid", "nonce"))
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+
+        assertEquals(
+            "2fdaeea2a78779ef769abfbf8b0afca7b1e5b14d74c9262471dd89b9b71728dd",
+            digest,
+        )
+    }
 }

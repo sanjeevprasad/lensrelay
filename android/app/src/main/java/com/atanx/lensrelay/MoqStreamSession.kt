@@ -26,6 +26,7 @@ class MoqStreamSession(
     private val desktop: PairedDesktop,
     private val lens: CameraLens,
     private val targetRotation: Int,
+    private val phoneId: String,
     private val settings: StreamSettings = StreamSettings(),
     private val onVideoSize: (Int, Int) -> Unit,
     private val onCameraReady: (Camera, Size) -> Unit,
@@ -79,6 +80,7 @@ class MoqStreamSession(
         starting = true
         scope.launch {
             try {
+                validateDesktop()
                 val activeSession = SecureMoqSession(
                     mediaUrl(),
                     desktop.mediaCertificateFingerprint,
@@ -118,8 +120,10 @@ class MoqStreamSession(
                 activePublisher.start()
                 onState(State.Connected, null)
             } catch (error: Exception) {
-                Log.e(TAG, "Could not start MoQ camera stream", error)
-                if (!stopped) onState(State.Failed, error.message)
+                // Never log the throwable or forward its message: media-library
+                // errors can echo the connection URL, which embeds the publish token.
+                Log.e(TAG, "Could not start MoQ camera stream: ${error::class.java.simpleName}")
+                if (!stopped) onState(State.Failed, "Could not connect to the desktop camera relay.")
             }
         }
     }
@@ -127,7 +131,18 @@ class MoqStreamSession(
     private fun mediaUrl(): String {
         val host = if (desktop.host.contains(':')) "[${desktop.host}]" else desktop.host
         val token = URLEncoder.encode(desktop.mediaToken, Charsets.UTF_8.name())
-        return "https://$host:$MEDIA_PORT/lensrelay/${desktop.receiverId}?jwt=$token"
+        return "https://$host:$MEDIA_PORT/lensrelay/${desktop.receiverId}/$phoneId?jwt=$token"
+    }
+
+    private fun validateDesktop() {
+        require(desktop.host.isNotBlank()) { "The desktop media address is invalid." }
+        require(desktop.port in 1..65535) { "The desktop media port is invalid." }
+        require(desktop.mediaCertificateFingerprint.matches(Regex("[0-9a-f]{64}"))) {
+            "The desktop media certificate fingerprint is invalid."
+        }
+        require(
+            desktop.mediaToken.length in 32..8192 && desktop.mediaToken.count { it == '.' } == 2,
+        ) { "The desktop media authorization is invalid." }
     }
 
     companion object {

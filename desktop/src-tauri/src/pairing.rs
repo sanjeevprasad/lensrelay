@@ -1,6 +1,6 @@
 use std::{
     fs, io,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -132,7 +132,7 @@ fn identity_path() -> Result<PathBuf, String> {
     Ok(project.config_dir().join("identity.key"))
 }
 
-fn persist_identity(path: &PathBuf, bytes: &[u8; 32]) -> Result<(), String> {
+fn persist_identity(path: &Path, bytes: &[u8; 32]) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "desktop identity path has no parent".to_owned())?;
@@ -215,9 +215,13 @@ mod tests {
 
         assert_eq!(value["version"], 1);
         assert_eq!(value["receiverId"], session.receiver_id);
-        assert!(value["nonce"]
-            .as_str()
-            .is_some_and(|value| value.len() >= 32));
+        assert_eq!(
+            URL_SAFE_NO_PAD
+                .decode(value["nonce"].as_str().expect("base64url nonce"))
+                .expect("nonce is valid base64url")
+                .len(),
+            24
+        );
         assert!(session.qr_svg.contains("<svg"));
         assert_eq!(value["host"], "192.168.1.20");
         assert_eq!(value["port"], 53_417);

@@ -24,6 +24,8 @@ pub struct AppState {
     virtual_camera: Arc<dyn platform::VirtualCameraAdapter>,
     media_endpoint: String,
     media_certificate_fingerprint: String,
+    media_auth: Arc<media_auth::MediaAuthorizer>,
+    receiver_id: String,
 }
 
 impl AppState {
@@ -70,8 +72,10 @@ impl AppState {
             media_auth.clone(),
             control.clone(),
         )?;
-        let subscriber_token = media_auth.subscriber_token(&receiver_id)?;
         let virtual_camera = platform::current();
+        if let Err(error) = virtual_camera.ensure_ready() {
+            eprintln!("LensRelay: virtual camera placeholder unavailable: {error}");
+        }
         Ok(Self {
             receiver,
             pairing_session,
@@ -81,8 +85,10 @@ impl AppState {
             control_port: control_server::CONTROL_PORT,
             control,
             virtual_camera,
-            media_endpoint: format!("{}?jwt={subscriber_token}", media_relay.endpoint),
+            media_endpoint: media_relay.endpoint,
             media_certificate_fingerprint: media_relay.certificate_fingerprint,
+            media_auth,
+            receiver_id,
         })
     }
 }

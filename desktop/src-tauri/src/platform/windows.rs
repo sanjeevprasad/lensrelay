@@ -3,6 +3,9 @@ use crate::{model::PlatformInfo, platform::VirtualCameraAdapter};
 pub struct WindowsAdapter;
 
 impl VirtualCameraAdapter for WindowsAdapter {
+    fn ensure_ready(&self) -> Result<(), String> {
+        Ok(())
+    }
     fn info(&self) -> PlatformInfo {
         PlatformInfo {
             operating_system: "Windows",

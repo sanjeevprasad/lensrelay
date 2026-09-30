@@ -1,21 +1,15 @@
 package com.atanx.lensrelay
 
 import android.util.Log
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.SocketTimeoutException
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.security.cert.X509Certificate
 import java.util.concurrent.atomic.AtomicBoolean
-import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
-import javax.net.ssl.X509TrustManager
 
 class ControlClient(
     private val desktop: PairedDesktop,
@@ -95,13 +89,29 @@ class ControlClient(
                     .put("nonce", proof.nonce)
                     .put("signature", proof.signature),
             )
-            val acknowledgement = JSONObject(input.readLine() ?: error("Desktop closed during authentication"))
+            val acknowledgementLine = input.readLine() ?: error("Desktop closed during authentication")
+            val acknowledgement = try {
+                JSONObject(acknowledgementLine)
+            } catch (_: JSONException) {
+                throw IllegalStateException("The desktop sent an invalid pairing response.")
+            }
             check(acknowledgement.optString("type") == "helloAck") { "Desktop rejected control authentication" }
             check(acknowledgement.optString("receiverId") == desktop.receiverId) { "Desktop identity changed" }
             acknowledgement.getString("mediaToken").also { token ->
                 require(token.length in 32..8192 && token.count { it == '.' } == 2) {
                     "Desktop returned an invalid media authorization"
                 }
+                DesktopAcks.verify(
+                    desktop.publicKey,
+                    DesktopAcks.transcript(
+                        DesktopAcks.CONTROL_ACK_DOMAIN,
+                        desktop.receiverId,
+                        proof.identity.phoneId,
+                        proof.nonce,
+                        DesktopAcks.tokenHash(token),
+                    ),
+                    acknowledgement.getString("signature"),
+                )
                 onMediaAuthorization(token)
             }
 
@@ -141,31 +151,12 @@ class ControlClient(
         }
     }
 
-    private fun createSocket(): SSLSocket {
-        val expectedFingerprint = desktop.mediaCertificateFingerprint.lowercase()
-        val trustManager = object : X509TrustManager {
-            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) = Unit
-            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
-                require(chain.isNotEmpty()) { "Desktop did not present a TLS certificate" }
-                val actual = MessageDigest.getInstance("SHA-256")
-                    .digest(chain[0].encoded)
-                    .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-                require(actual == expectedFingerprint) { "Desktop TLS certificate does not match pairing" }
-            }
-        }
-        val context = SSLContext.getInstance("TLS")
-        context.init(null, arrayOf(trustManager), SecureRandom())
-        val transport = Socket().apply {
-            connect(InetSocketAddress(desktop.host, desktop.controlPort), CONNECT_TIMEOUT_MS)
-        }
-        return context.socketFactory.createSocket(
-            transport,
-            desktop.host,
-            desktop.controlPort,
-            true,
-        ) as SSLSocket
-    }
+    private fun createSocket(): SSLSocket = TlsPinning.createSocket(
+        desktop.host,
+        desktop.controlPort,
+        desktop.mediaCertificateFingerprint,
+        CONNECT_TIMEOUT_MS,
+    )
 
     private fun send(message: JSONObject) {
         val activeWriter = writer ?: return

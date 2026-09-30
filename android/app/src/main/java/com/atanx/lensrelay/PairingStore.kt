@@ -59,7 +59,7 @@ class PairingStore(context: Context) {
         }
     }
 
-    fun save(payload: PairingPayload): PairedDesktop {
+    fun save(payload: PairingPayload): PairedDesktop = synchronized(this) {
         val pairings = load()
         val pairedDesktop = PairedDesktop(
             receiverId = payload.receiverId,
@@ -82,15 +82,15 @@ class PairingStore(context: Context) {
                 ?: false,
         )
         write(pairings.filterNot { it.receiverId == pairedDesktop.receiverId } + pairedDesktop)
-        return pairedDesktop
+        pairedDesktop
     }
 
-    fun forget(receiverId: String) {
+    fun forget(receiverId: String) = synchronized(this) {
         val remaining = load().filterNot { it.receiverId == receiverId }
         write(remaining)
     }
 
-    fun setPreferredCamera(receiverId: String, camera: CameraLens): PairedDesktop? {
+    fun setPreferredCamera(receiverId: String, camera: CameraLens): PairedDesktop? = synchronized(this) {
         var updated: PairedDesktop? = null
         val pairings = load().map { desktop ->
             if (desktop.receiverId == receiverId) {
@@ -100,14 +100,14 @@ class PairingStore(context: Context) {
             }
         }
         if (updated != null) write(pairings)
-        return updated
+        updated
     }
 
     fun setAllowRemoteStart(receiverId: String, allowed: Boolean): PairedDesktop? =
-        update(receiverId) { it.copy(allowRemoteStart = allowed) }
+        synchronized(this) { update(receiverId) { it.copy(allowRemoteStart = allowed) } }
 
     fun setMediaToken(receiverId: String, token: String): PairedDesktop? =
-        update(receiverId) { it.copy(mediaToken = token) }
+        synchronized(this) { update(receiverId) { it.copy(mediaToken = token) } }
 
     private fun update(receiverId: String, transform: (PairedDesktop) -> PairedDesktop): PairedDesktop? {
         var updated: PairedDesktop? = null

@@ -29,4 +29,29 @@ class PairingChallengeTest {
             digest,
         )
     }
+
+    @Test
+    fun `challenge encoding preserves multibyte phone names`() {
+        val payload = PairingPayload(
+            receiverId = "rid",
+            receiverName = "Desk",
+            publicKey = "key",
+            nonce = "nonce",
+            fingerprint = "fingerprint",
+            expiresAt = 1_100,
+            host = "192.168.1.20",
+            port = 53_417,
+            controlPort = 53_419,
+            mediaCertificateFingerprint = "ab".repeat(32),
+        )
+
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(PairingChallenge.encode(payload, "Píxel \uD83D\uDCF7 phone"))
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+
+        assertEquals(
+            "a7a99fe64f8176885c9ca55a5d8dcfa060e84a7366562cbda66dbc9f402398d7",
+            digest,
+        )
+    }
 }

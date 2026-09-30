@@ -68,8 +68,9 @@ signature. The desktop recomputes `phoneId`, verifies the signature and active
 session fields, persists the verified phone identity, then atomically consumes
 the one-time nonce. Android saves the desktop identity only after receiving a
 successful acknowledgement matching the receiver, phone, and one-time nonce.
-The acknowledgement includes a 24-hour publish-only JWT scoped to this
-receiver's media namespace. Both sides therefore retain the pairing across
+The acknowledgement includes a 24-hour publish-only JWT scoped to this phone's
+namespace within the receiver (`lensrelay/<receiverId>/<phoneId>`) and an Ed25519
+signature over the receiver, phone, nonce, and media token hash.
 application restarts.
 
 ## Trust boundary
@@ -82,15 +83,19 @@ the signed request proves the phone identity and consumes the one-time nonce. Th
 pairing continues immediately; the user does not wait for discovery after
 scanning a code displayed by an online desktop. Local discovery is used only
 for later reconnections, and Android must compare any advertised identity with
-the stored public-key-derived receiver ID before connecting. The later secure
-signaling handshake must also prove possession of the desktop private key.
+the stored public-key-derived receiver ID before connecting. The pairing
+acknowledgement and the control helloAck are both signed by the desktop Ed25519
+identity over domain-separated transcripts that bind the phone's fresh hello
+nonce and a hash of the delivered media token, proving possession of the desktop
+private key.
 
 MoQ media and the persistent control channel use the TLS certificate pinned by
 the QR. The phone additionally signs the control hello with its paired P-256
 identity. A successful control authentication refreshes the short-lived media
 publishing token. The relay gives the local desktop preview a separate
-subscribe-only token. The Wi-Fi-only MVP does not use cloud signaling or a
-cloud relay.
+subscribe-only token, and the preview subscribes only to the media path of the
+phone that currently holds the authenticated control connection. The Wi-Fi-only
+MVP does not use cloud signaling or a cloud relay.
 
 Paired-phone metadata, media authorization keys, and TLS private keys are
 written atomically. Windows protects private data with current-user DPAPI;

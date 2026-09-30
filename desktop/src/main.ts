@@ -367,7 +367,13 @@ async function setStreaming(streaming: boolean): Promise<void> {
 
 async function refreshControlStatus(): Promise<void> {
   try {
-    renderControlStatus(await invoke<ControlStatus>("get_control_status"));
+    const status = await invoke<ControlStatus>("get_control_status");
+    renderControlStatus(status);
+    // Subscribe only to the currently control-authenticated phone's namespace;
+    // the desktop scopes the URL path and subscribe-only token to that phone.
+    const previewUrl = await invoke<string>("get_media_endpoint");
+    const watch = requiredElement("media-watch") as HTMLElementTagNameMap["moq-watch"];
+    if (watch.url?.toString() !== previewUrl) watch.url = previewUrl;
   } catch (error) {
     if (lastControlConnected) requiredElement("control-error").textContent = String(error);
     lastControlConnected = false;

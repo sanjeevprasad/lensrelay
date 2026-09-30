@@ -61,8 +61,11 @@ pub async fn forget_paired_device(
 pub fn report_frontend_error(message: String) {
     eprintln!("LensRelay WebView error: {message}");
     #[cfg(debug_assertions)]
-    if let Err(error) = std::fs::write("/tmp/lensrelay-last-webview-error.txt", &message) {
-        eprintln!("LensRelay: could not save WebView diagnostic: {error}");
+    if let Some(project) = directories::ProjectDirs::from("com", "atanx", "LensRelay") {
+        let path = project.config_dir().join("last-webview-error.txt");
+        if let Err(error) = std::fs::write(&path, &message) {
+            eprintln!("LensRelay: could not save WebView diagnostic: {error}");
+        }
     }
 }
 
@@ -126,6 +129,15 @@ pub async fn create_pairing_session(state: State<'_, AppState>) -> Result<Pairin
 
 #[tauri::command]
 pub fn get_media_endpoint(state: State<'_, AppState>) -> String {
+    // The preview subscribes only to the currently control-authenticated phone's
+    // namespace; the relay enforces the matching subscribe-only token.
+    if let Ok(status) = state.control.status() {
+        if let (true, Some(phone_id)) = (status.connected, status.phone_id) {
+            if let Ok(token) = state.media_auth.subscriber_token(&state.receiver_id) {
+                return format!("{}/{}?jwt={}", state.media_endpoint, phone_id, token);
+            }
+        }
+    }
     state.media_endpoint.clone()
 }
 

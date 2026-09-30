@@ -37,17 +37,60 @@ class PairingPayloadTest {
         }
     }
 
-    private fun payload(expiresAt: Long, receiverId: String = receiverId()): String {
+    @Test
+    fun `short pairing nonce is rejected`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PairingPayload.parse(
+                payload(expiresAt = 1_100, nonce = encode(ByteArray(16) { 9 })),
+                nowSeconds = 1_000,
+            )
+        }
+    }
+
+    @Test
+    fun `long pairing nonce is rejected`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PairingPayload.parse(
+                payload(expiresAt = 1_100, nonce = encode(ByteArray(32) { 9 })),
+                nowSeconds = 1_000,
+            )
+        }
+    }
+
+    @Test
+    fun `padded pairing nonce encoding is rejected`() {
+        val padded = Base64.getUrlEncoder().encodeToString(ByteArray(25) { 9 })
+        assertThrows(IllegalArgumentException::class.java) {
+            PairingPayload.parse(payload(expiresAt = 1_100, nonce = padded), nowSeconds = 1_000)
+        }
+    }
+
+    @Test
+    fun `mixed-case media certificate fingerprint is rejected`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PairingPayload.parse(
+                payload(expiresAt = 1_100, mediaCertificateFingerprint = "AB".repeat(32)),
+                nowSeconds = 1_000,
+            )
+        }
+    }
+
+    private fun payload(
+        expiresAt: Long,
+        receiverId: String = receiverId(),
+        nonce: String = encode(ByteArray(24) { 9 }),
+        mediaCertificateFingerprint: String = "ab".repeat(32),
+    ): String {
         val json = JSONObject()
             .put("version", 1)
             .put("receiverId", receiverId)
             .put("receiverName", "Desk")
             .put("publicKey", encode(PUBLIC_KEY))
-            .put("nonce", encode(ByteArray(24) { 9 }))
+            .put("nonce", nonce)
             .put("expiresAt", expiresAt)
             .put("host", "192.168.1.20")
             .put("port", 53_417)
-            .put("mediaCertificateFingerprint", "ab".repeat(32))
+            .put("mediaCertificateFingerprint", mediaCertificateFingerprint)
             .toString()
         return "lensrelay:pair:${encode(json.toByteArray())}"
     }

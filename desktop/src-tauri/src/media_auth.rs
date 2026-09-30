@@ -3,9 +3,10 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime},
 };
-
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use directories::ProjectDirs;
 use moq_token::{Algorithm, Claims, Key, KeyId};
+use sha2::{Digest, Sha256};
 
 use crate::secure_storage;
 
@@ -61,16 +62,16 @@ impl MediaAuthorizer {
         &self.public_key_path
     }
 
-    pub fn publisher_token(&self, receiver_id: &str) -> Result<String, String> {
-        self.token(receiver_id, true)
+    pub fn publisher_token(&self, receiver_id: &str, phone_id: &str) -> Result<String, String> {
+        self.token(&format!("lensrelay/{receiver_id}/{phone_id}"), true)
     }
 
     pub fn subscriber_token(&self, receiver_id: &str) -> Result<String, String> {
-        self.token(receiver_id, false)
+        self.token(&format!("lensrelay/{receiver_id}"), false)
     }
 
-    fn token(&self, receiver_id: &str, publish: bool) -> Result<String, String> {
-        let root = format!("lensrelay/{receiver_id}");
+
+    fn token(&self, root: &str, publish: bool) -> Result<String, String> {
         let claims = if publish {
             Claims::default().with_root(root).with_publish([""])
         } else {
@@ -82,6 +83,13 @@ impl MediaAuthorizer {
             .sign(&claims)
             .map_err(|error| format!("could not issue media authorization: {error}"))
     }
+}
+
+/// Base64url of the SHA-256 digest over the exact UTF-8 bytes of a media token.
+/// Desktop acknowledgements sign this hash so phones can bind received tokens to
+/// the authenticated desktop identity without parsing the token itself.
+pub(crate) fn media_token_hash(media_token: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(media_token.as_bytes()))
 }
 
 fn config_directory() -> Result<PathBuf, String> {
@@ -103,9 +111,9 @@ mod tests {
         };
 
         let publisher = signing_key
-            .verify(&authorizer.publisher_token("receiver").unwrap())
+            .verify(&authorizer.publisher_token("receiver", "phone").unwrap())
             .unwrap();
-        assert_eq!(publisher.root, "lensrelay/receiver");
+        assert_eq!(publisher.root, "lensrelay/receiver/phone");
         assert_eq!(publisher.publish, vec![""]);
         assert!(publisher.subscribe.is_empty());
 

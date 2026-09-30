@@ -63,7 +63,8 @@ data class PairingPayload(
                 "The desktop name in this pairing code is invalid."
             }
             require(publicKeyBytes.size == 32) { "The desktop identity is invalid." }
-            require(nonceBytes.size >= 16) { "The pairing nonce is invalid." }
+            require(nonceBytes.size == 24) { "The pairing nonce is invalid." }
+            require(encodeUrlSafe(nonceBytes) == nonce) { "The pairing nonce is invalid." }
             require(expiresAt >= nowSeconds) { "This pairing code has expired." }
             require(expiresAt <= nowSeconds + MAX_CLOCK_WINDOW_SECONDS) {
                 "This pairing code has an invalid expiration time."
@@ -73,7 +74,7 @@ data class PairingPayload(
             }
             require(port in 1..65535) { "The desktop network port is invalid." }
             require(controlPort in 1..65535) { "The desktop control port is invalid." }
-            require(mediaCertificateFingerprint.matches(Regex("[0-9a-fA-F]{64}"))) {
+            require(mediaCertificateFingerprint.matches(Regex("[0-9a-f]{64}"))) {
                 "The desktop media certificate fingerprint is invalid."
             }
 
@@ -91,7 +92,7 @@ data class PairingPayload(
                 host = host,
                 port = port,
                 controlPort = controlPort,
-                mediaCertificateFingerprint = mediaCertificateFingerprint.lowercase(),
+                mediaCertificateFingerprint = mediaCertificateFingerprint,
             )
         }
 

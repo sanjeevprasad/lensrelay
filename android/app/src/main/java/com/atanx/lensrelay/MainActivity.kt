@@ -462,10 +462,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun completePairing(payload: PairingPayload) {
         updateStatus(getString(R.string.confirming_pairing))
+        val phoneName = phoneDisplayName()
         analysisExecutor.execute {
             val result = runCatching {
-                val phoneName = Build.MODEL.trim().ifEmpty { getString(R.string.unknown_phone) }
-                    .take(80)
                 val proof = phoneIdentity.createPairingProof(payload, phoneName)
                 val mediaToken = PairingClient.pair(payload, proof, phoneName)
                 payload.copy(mediaToken = mediaToken)
@@ -501,6 +500,15 @@ class MainActivity : AppCompatActivity() {
                 showMessage(getString(R.string.pairing_saved, desktop.receiverName))
             }
         }
+    }
+
+    private fun phoneDisplayName(): String {
+        val model = Build.MODEL.trim().ifEmpty { getString(R.string.unknown_phone) }
+        val builder = StringBuilder()
+        model.codePoints()
+            .limit(MAX_PHONE_NAME_CODE_POINTS.toLong())
+            .forEach { codePoint -> builder.appendCodePoint(codePoint) }
+        return builder.toString()
     }
 
     private fun needsLocalNetworkPermission(): Boolean =
@@ -819,6 +827,7 @@ class MainActivity : AppCompatActivity() {
         actualStreamSize = null
         showStreamingSurface()
         binding.streamingStatus.setText(R.string.stream_starting)
+        val phoneId = phoneIdentity.publicIdentity().phoneId
         val session = MoqStreamSession(
             applicationContext,
             this,
@@ -827,6 +836,7 @@ class MainActivity : AppCompatActivity() {
             activeLens,
             // CameraX owns phone orientation; LensRelay stores no phone rotation preference.
             binding.mediaPreview.display?.rotation ?: Surface.ROTATION_0,
+            phoneId = phoneId,
             settings = streamSettings,
             onVideoSize = { width, height ->
                 runOnUiThread {
@@ -999,6 +1009,7 @@ class MainActivity : AppCompatActivity() {
         if (!force && controlDesktopId == desktop.receiverId && controlClient != null) return
         stopControlClient()
         val generation = ++controlGeneration
+        val desktopId = desktop.receiverId
         controlDesktopId = desktop.receiverId
         controlClient = ControlClient(
             desktop = desktop,
@@ -1018,7 +1029,10 @@ class MainActivity : AppCompatActivity() {
                 }
             },
             onCommand = { command, parameters, responder ->
-                runOnUiThread { handleControlCommand(command, parameters, responder) }
+                runOnUiThread {
+                    if (generation != controlGeneration || desktopId != controlDesktopId) return@runOnUiThread
+                    handleControlCommand(command, parameters, responder, desktop)
+                }
             },
         ).also { client ->
             client.start()
@@ -1039,10 +1053,11 @@ class MainActivity : AppCompatActivity() {
         command: String,
         parameters: JSONObject,
         responder: ControlClient.Responder,
+        desktop: PairedDesktop,
     ) {
         runCatching {
             when (command) {
-                "start" -> requestRemoteStart(responder)
+                "start" -> requestRemoteStart(responder, desktop)
                 "stop" -> {
                     // Acknowledge before tearing down CameraX, the encoder, and QUIC. Those
                     // operations may block, but the control connection must remain responsive.
@@ -1054,11 +1069,12 @@ class MainActivity : AppCompatActivity() {
                     stopStreamingAndShowHome()
                 }
                 "unpair" -> {
-                    val desktop = activePairedDesktop() ?: error("Desktop is no longer paired")
+                    val current = pairedDesktops().firstOrNull { it.receiverId == desktop.receiverId }
+                        ?: error("Desktop is no longer paired")
                     responder.respond(true, JSONObject().put("removed", true), null)
                     binding.root.postDelayed(
                         {
-                            forgetDesktopLocally(desktop)
+                            forgetDesktopLocally(current)
                             stopStreamingAndShowHome()
                             showMessage(getString(R.string.desktop_unpaired))
                         },
@@ -1071,8 +1087,8 @@ class MainActivity : AppCompatActivity() {
                         "back" -> CameraLens.Back
                         else -> error("Unknown camera")
                     }
-                    activePairedDesktop()?.let {
-                        pairingStore.setPreferredCamera(it.receiverId, activeLens)
+                    if (pairedDesktops().any { it.receiverId == desktop.receiverId }) {
+                        pairingStore.setPreferredCamera(desktop.receiverId, activeLens)
                     }
                     applyRestartSetting(responder)
                 }
@@ -1167,8 +1183,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestRemoteStart(responder: ControlClient.Responder) {
-        val desktop = activePairedDesktop() ?: error("Desktop is no longer paired")
+    private fun requestRemoteStart(responder: ControlClient.Responder, desktop: PairedDesktop) {
+        val current = pairedDesktops().firstOrNull { it.receiverId == desktop.receiverId }
+            ?: error("Desktop is no longer paired")
         if (!hasCameraPermission()) {
             responder.respond(false, null, "Open LensRelay and grant camera permission first")
             return
@@ -1181,18 +1198,18 @@ class MainActivity : AppCompatActivity() {
             }
             responder.respond(true, currentControlState(), null)
         }
-        if (desktop.allowRemoteStart) {
+        if (current.allowRemoteStart) {
             start()
             return
         }
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.remote_start_title)
-            .setMessage(getString(R.string.remote_start_message, desktop.receiverName))
+            .setMessage(getString(R.string.remote_start_message, current.receiverName))
             .setNegativeButton(R.string.deny) { _, _ ->
                 responder.respond(false, null, "Remote camera start was denied")
             }
             .setNeutralButton(R.string.allow_always) { _, _ ->
-                pairingStore.setAllowRemoteStart(desktop.receiverId, true)
+                pairingStore.setAllowRemoteStart(current.receiverId, true)
                 renderPairedDesktops()
                 start()
             }
@@ -1338,6 +1355,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "LensRelayCamera"
         private const val FOCUS_MESSAGE_DURATION_MS = 1_200L
+        private const val MAX_PHONE_NAME_CODE_POINTS = 80
     }
 
     private enum class CameraPurpose {

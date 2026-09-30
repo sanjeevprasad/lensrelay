@@ -1,14 +1,8 @@
 package com.atanx.lensrelay
 
+import org.json.JSONException
 import org.json.JSONObject
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.security.cert.X509Certificate
-import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
-import javax.net.ssl.X509TrustManager
 
 object PairingClient {
     private const val PROTOCOL_VERSION = 1
@@ -27,7 +21,7 @@ object PairingClient {
             .put("expiresAt", payload.expiresAt)
             .put("algorithm", proof.identity.algorithm)
             .put("phoneId", proof.identity.phoneId)
-            .put("phoneName", phoneName.take(80))
+            .put("phoneName", phoneName)
             .put("publicKey", proof.identity.publicKey)
             .put("signature", proof.signature)
             .toString()
@@ -54,6 +48,17 @@ object PairingClient {
             require(token.length in 32..8192 && token.count { it == '.' } == 2) {
                 "The desktop returned an invalid media authorization."
             }
+            DesktopAcks.verify(
+                payload.publicKey,
+                DesktopAcks.transcript(
+                    DesktopAcks.PAIRING_ACK_DOMAIN,
+                    payload.receiverId,
+                    proof.identity.phoneId,
+                    payload.nonce,
+                    DesktopAcks.tokenHash(token),
+                ),
+                response.getString("signature"),
+            )
         }
     }
 
@@ -115,30 +120,14 @@ object PairingClient {
             require(responseLine.length <= MAX_RESPONSE_LENGTH) {
                 "The desktop sent an invalid pairing response."
             }
-            return JSONObject(responseLine)
+            return try {
+                JSONObject(responseLine)
+            } catch (_: JSONException) {
+                throw IllegalStateException("The desktop sent an invalid pairing response.")
+            }
         }
     }
 
-    private fun createSocket(host: String, port: Int, fingerprint: String): SSLSocket {
-        val expectedFingerprint = fingerprint.lowercase()
-        val trustManager = object : X509TrustManager {
-            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) = Unit
-            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
-                require(chain.isNotEmpty()) { "Desktop did not present a TLS certificate" }
-                val actual = MessageDigest.getInstance("SHA-256")
-                    .digest(chain[0].encoded)
-                    .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-                require(actual == expectedFingerprint) {
-                    "Desktop TLS certificate does not match the scanned QR code"
-                }
-            }
-        }
-        val context = SSLContext.getInstance("TLS")
-        context.init(null, arrayOf(trustManager), SecureRandom())
-        val transport = Socket().apply {
-            connect(InetSocketAddress(host, port), TIMEOUT_MILLIS)
-        }
-        return context.socketFactory.createSocket(transport, host, port, true) as SSLSocket
-    }
+    private fun createSocket(host: String, port: Int, fingerprint: String): SSLSocket =
+        TlsPinning.createSocket(host, port, fingerprint, TIMEOUT_MILLIS)
 }

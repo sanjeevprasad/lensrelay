@@ -34,18 +34,17 @@ object UnpairProtocol {
         )
         val valid = Signature.getInstance("Ed25519").run {
             initVerify(publicKey)
-            update(
-                encodeFields(
-                    DESKTOP_ACK_DOMAIN,
-                    desktop.receiverId,
-                    phoneId,
-                    nonce,
-                ),
-            )
+            update(desktopAckTranscript(desktop.receiverId, phoneId, nonce))
             verify(decode(signature, "desktop acknowledgement"))
         }
         check(valid) { "The desktop acknowledgement could not be verified." }
     }
+
+    internal fun desktopAckTranscript(
+        receiverId: String,
+        phoneId: String,
+        nonce: String,
+    ): ByteArray = encodeFields(DESKTOP_ACK_DOMAIN, receiverId, phoneId, nonce)
 
     private fun encodeFields(
         vararg fields: String,

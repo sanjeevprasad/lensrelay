@@ -1,4 +1,10 @@
-use std::{fs, path::PathBuf, sync::Mutex, thread, time::Duration};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Mutex,
+    thread,
+    time::Duration,
+};
 
 use gst::prelude::*;
 use gstreamer as gst;
@@ -44,7 +50,7 @@ impl LinuxAdapter {
             .is_some_and(|state| matches!(state, gst::State::Paused | gst::State::Playing))
     }
 
-    fn start_test_pattern(&self, device: &PathBuf) -> Result<(), String> {
+    fn start_test_pattern(&self, device: &Path) -> Result<(), String> {
         gst::init().map_err(|error| format!("could not initialize GStreamer: {error}"))?;
 
         let source = gst::ElementFactory::make("videotestsrc")
@@ -97,7 +103,57 @@ impl LinuxAdapter {
         Ok(())
     }
 
-    fn start_jpeg_pipeline(&self, device: &PathBuf) -> Result<(), String> {
+    fn start_placeholder(&self, device: &Path) -> Result<(), String> {
+        gst::init().map_err(|error| format!("could not initialize GStreamer: {error}"))?;
+        let source = gst::ElementFactory::make("videotestsrc")
+            .property("is-live", true)
+            .property_from_str("pattern", "black")
+            .build()
+            .map_err(|error| format!("could not create GStreamer placeholder source: {error}"))?;
+        let overlay = gst::ElementFactory::make("textoverlay")
+            .property("text", "Waiting for camera")
+            .property_from_str("halignment", "center")
+            .property_from_str("valignment", "center")
+            .property("font-desc", "Sans 28")
+            .build()
+            .map_err(|error| format!("could not create GStreamer placeholder text: {error}"))?;
+        let convert = gst::ElementFactory::make("videoconvert")
+            .build()
+            .map_err(|error| format!("could not create GStreamer converter: {error}"))?;
+        let filter = gst::ElementFactory::make("capsfilter")
+            .property(
+                "caps",
+                gst::Caps::builder("video/x-raw")
+                    .field("format", "YUY2")
+                    .field("width", 1280i32)
+                    .field("height", 720i32)
+                    .field("framerate", gst::Fraction::new(30, 1))
+                    .build(),
+            )
+            .build()
+            .map_err(|error| format!("could not create GStreamer format filter: {error}"))?;
+        let sink = gst::ElementFactory::make("v4l2sink")
+            .property("device", device.to_string_lossy().as_ref())
+            .property("sync", false)
+            .build()
+            .map_err(|error| format!("could not create GStreamer V4L2 sink: {error}"))?;
+        let pipeline = gst::Pipeline::new();
+        pipeline
+            .add_many([&source, &overlay, &convert, &filter, &sink])
+            .map_err(|error| format!("could not assemble placeholder pipeline: {error}"))?;
+        gst::Element::link_many([&source, &overlay, &convert, &filter, &sink])
+            .map_err(|error| format!("could not link placeholder pipeline: {error}"))?;
+        pipeline
+            .set_state(gst::State::Playing)
+            .map_err(|error| format!("could not start placeholder pipeline: {error}"))?;
+        *self
+            .pipeline
+            .lock()
+            .map_err(|_| "virtual-camera state is unavailable".to_owned())? = Some(pipeline);
+        Ok(())
+    }
+
+    fn start_jpeg_pipeline(&self, device: &Path) -> Result<(), String> {
         gst::init().map_err(|error| format!("could not initialize GStreamer: {error}"))?;
         self.stop()?;
 
@@ -232,6 +288,16 @@ impl LinuxAdapter {
 }
 
 impl VirtualCameraAdapter for LinuxAdapter {
+    fn ensure_ready(&self) -> Result<(), String> {
+        if !self.is_running() {
+            let device = Self::device().ok_or_else(|| {
+                "LensRelay Camera is unavailable; load v4l2loopback first".to_owned()
+            })?;
+            self.start_placeholder(&device)?;
+        }
+        Ok(())
+    }
+
     fn info(&self) -> PlatformInfo {
         let device = Self::device();
         let running = self.is_running();
@@ -263,6 +329,7 @@ impl VirtualCameraAdapter for LinuxAdapter {
             }
         } else {
             self.stop()?;
+            self.ensure_ready()?;
         }
         Ok(self.info())
     }

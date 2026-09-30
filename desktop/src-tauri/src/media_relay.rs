@@ -1,5 +1,11 @@
-use std::{fs, net::SocketAddr, path::PathBuf, sync::mpsc, thread, time::Duration};
-
+use std::{
+    fs,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    sync::mpsc,
+    thread,
+    time::Duration,
+};
 use directories::ProjectDirs;
 use moq_relay::{Config, Relay};
 use rcgen::{CertificateParams, KeyPair};
@@ -14,7 +20,7 @@ pub struct MediaRelayInfo {
     runtime_private_key: bool,
 }
 
-pub fn start(host: &str, receiver_id: &str, auth_key: &PathBuf) -> Result<MediaRelayInfo, String> {
+pub fn start(host: &str, receiver_id: &str, auth_key: &Path) -> Result<MediaRelayInfo, String> {
     let host = host.to_owned();
     let scope = format!("lensrelay/{receiver_id}");
     // WebKit's WebSocket fallback is plaintext, so expose it on loopback only.
@@ -23,7 +29,7 @@ pub fn start(host: &str, receiver_id: &str, auth_key: &PathBuf) -> Result<MediaR
     let (certificate, private_key, runtime_private_key) = prepare_certificate(&host)?;
     let relay_certificate = certificate.clone();
     let relay_private_key = private_key.clone();
-    let auth_key = auth_key.clone();
+    let auth_key: PathBuf = auth_key.to_path_buf();
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
 
     thread::Builder::new()
@@ -74,6 +80,9 @@ pub fn start(host: &str, receiver_id: &str, auth_key: &PathBuf) -> Result<MediaR
     let certificate_fingerprint = ready_rx
         .recv_timeout(Duration::from_secs(10))
         .map_err(|_| "media relay did not start in time".to_owned())??;
+    // The phone pins and signs this exact string; normalize once at the source
+    // so pairing transcripts never depend on the relay's hex casing.
+    let certificate_fingerprint = certificate_fingerprint.to_ascii_lowercase();
     Ok(MediaRelayInfo {
         endpoint,
         certificate_fingerprint,
@@ -128,6 +137,8 @@ fn prepare_certificate(host: &str) -> Result<(PathBuf, PathBuf, bool), String> {
     #[cfg(windows)]
     {
         let runtime = directory.join(".private-key.runtime.pem");
+        // Remove any plaintext key left behind by a crash before rewriting it.
+        let _ = fs::remove_file(&runtime);
         let key = crate::secure_storage::read(&protected_key)
             .map_err(|error| format!("could not unlock media private key: {error}"))?;
         crate::secure_storage::write_runtime_private(&runtime, &key)
@@ -140,8 +151,8 @@ fn prepare_certificate(host: &str) -> Result<(PathBuf, PathBuf, bool), String> {
 
 fn generate_certificate(
     host: &str,
-    certificate: &PathBuf,
-    private_key: &PathBuf,
+    certificate: &Path,
+    private_key: &Path,
 ) -> Result<(), String> {
     let directory = certificate
         .parent()

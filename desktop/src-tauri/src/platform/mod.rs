@@ -8,6 +8,7 @@ mod linux;
 mod windows;
 
 pub trait VirtualCameraAdapter: Send + Sync {
+    fn ensure_ready(&self) -> Result<(), String>;
     fn info(&self) -> PlatformInfo;
     fn set_test_pattern(&self, running: bool) -> Result<PlatformInfo, String>;
     fn push_jpeg_frame(&self, frame: Vec<u8>) -> Result<(), String>;
@@ -27,6 +28,9 @@ pub fn current() -> Arc<dyn VirtualCameraAdapter> {
 struct UnsupportedAdapter;
 
 impl VirtualCameraAdapter for UnsupportedAdapter {
+    fn ensure_ready(&self) -> Result<(), String> {
+        Ok(())
+    }
     fn info(&self) -> PlatformInfo {
         PlatformInfo {
             operating_system: std::env::consts::OS,

@@ -4,9 +4,12 @@ use std::{
     io::{self, BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
     path::Path,
-    sync::{mpsc, Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Arc, LazyLock, Mutex,
+    },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -19,11 +22,46 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::{media_auth::MediaAuthorizer, pairing::DesktopIdentity, pairing_server};
+use crate::{
+    media_auth::{media_token_hash, MediaAuthorizer},
+    pairing::DesktopIdentity,
+    pairing_server,
+};
 
 pub const CONTROL_PORT: u16 = 53_419;
 const CONTROL_DOMAIN: &str = "lensrelay-phone-control-v1";
+const CONTROL_ACK_DOMAIN: &str = "lensrelay-desktop-control-ack-v1";
 const MAX_CLOCK_SKEW_SECONDS: u64 = 5 * 60;
+const HELLO_DEADLINE: Duration = Duration::from_secs(10);
+const MAX_PENDING_CONNECTIONS: usize = 64;
+static PENDING_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
+static SEEN_HELLOS: LazyLock<Mutex<HashMap<(String, String), Instant>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Bounded pre-authentication admission: each connection thread holds one
+/// permit for its lifetime, so unauthenticated sockets cannot exhaust threads.
+struct ConnectionPermit;
+
+impl ConnectionPermit {
+    fn acquire() -> Option<Self> {
+        PENDING_CONNECTIONS
+            .fetch_update(Ordering::Acquire, Ordering::Relaxed, |count| {
+                if count < MAX_PENDING_CONNECTIONS {
+                    Some(count + 1)
+                } else {
+                    None
+                }
+            })
+            .ok()
+            .map(|_| Self)
+    }
+}
+
+impl Drop for ConnectionPermit {
+    fn drop(&mut self) {
+        PENDING_CONNECTIONS.fetch_sub(1, Ordering::Release);
+    }
+}
 const IO_TICK: Duration = Duration::from_millis(250);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 // Remote start can wait for an explicit decision on the phone.
@@ -160,14 +198,14 @@ impl ControlHub {
             .active
             .lock()
             .ok()
-            .and_then(|mut active| {
+            .map(|mut active| {
                 let matches = active
                     .as_ref()
                     .is_some_and(|connection| connection.session_id == session_id);
                 if matches {
                     *active = None;
                 }
-                Some(matches)
+                matches
             })
             .unwrap_or(false);
         if should_clear {
@@ -212,15 +250,26 @@ pub fn start(
                         let identity = identity.clone();
                         let media_auth = media_auth.clone();
                         let hub = hub.clone();
-                        let _ = thread::Builder::new()
+                        let Some(permit) = ConnectionPermit::acquire() else {
+                            // Pre-authentication capacity is exhausted; drop the socket
+                            // so legitimate phones can still complete the handshake.
+                            drop(stream);
+                            continue;
+                        };
+                        if thread::Builder::new()
                             .name("lensrelay-control-connection".to_owned())
                             .spawn(move || {
+                                let _permit = permit;
                                 if let Err(error) =
                                     handle_connection(stream, tls, identity, media_auth, hub)
                                 {
                                     eprintln!("LensRelay control connection ended: {error}");
                                 }
-                            });
+                            })
+                            .is_err()
+                        {
+                            eprintln!("LensRelay could not spawn a control connection thread");
+                        }
                     }
                     Err(error) => eprintln!("LensRelay control listener error: {error}"),
                 }
@@ -247,11 +296,17 @@ fn handle_connection(
         .map_err(|error| format!("could not create TLS control session: {error}"))?;
     let mut reader = BufReader::new(StreamOwned::new(connection, stream));
 
-    let hello_line = read_required_line(&mut reader)?;
+    let hello_line = read_required_line(&mut reader, Instant::now() + HELLO_DEADLINE)?;
     let hello: Hello = serde_json::from_str(&hello_line)
         .map_err(|error| format!("invalid control hello: {error}"))?;
     let phone_name = verify_hello(&hello, &identity)?;
-    let media_token = media_auth.publisher_token(&hello.receiver_id)?;
+    let media_token = media_auth.publisher_token(&hello.receiver_id, &hello.phone_id)?;
+    let acknowledgement_signature = identity.sign(&control_ack_challenge(
+        &hello.receiver_id,
+        &hello.phone_id,
+        &hello.nonce,
+        &media_token_hash(&media_token),
+    ));
     write_message(
         reader.get_mut(),
         &json!({
@@ -259,6 +314,7 @@ fn handle_connection(
             "version": 1,
             "receiverId": identity.receiver_id(),
             "mediaToken": media_token,
+            "signature": acknowledgement_signature,
         }),
     )?;
 
@@ -348,8 +404,8 @@ fn verify_hello(hello: &Hello, identity: &DesktopIdentity) -> Result<String, Str
     let nonce = URL_SAFE_NO_PAD
         .decode(&hello.nonce)
         .map_err(|_| "invalid control nonce".to_owned())?;
-    if nonce.len() < 16 {
-        return Err("control nonce is too short".to_owned());
+    if nonce.len() != 24 {
+        return Err("control nonce is invalid".to_owned());
     }
 
     let phone = pairing_server::load_phones()?
@@ -384,6 +440,20 @@ fn verify_hello(hello: &Hello, identity: &DesktopIdentity) -> Result<String, Str
             &signature,
         )
         .map_err(|_| "phone control signature is invalid".to_owned())?;
+    let seen = SEEN_HELLOS
+        .lock()
+        .map_err(|_| "control replay state is unavailable".to_owned())?;
+    let now_mono = Instant::now();
+    let mut seen = seen;
+    seen.retain(|_, expires| *expires > now_mono);
+    let key = (hello.phone_id.clone(), hello.nonce.clone());
+    if seen.contains_key(&key) {
+        return Err("duplicate control hello".to_owned());
+    }
+    seen.insert(
+        key,
+        now_mono + Duration::from_secs(MAX_CLOCK_SKEW_SECONDS * 2 + 60),
+    );
     Ok(phone.phone_name)
 }
 
@@ -395,6 +465,27 @@ fn control_challenge(receiver_id: &str, phone_id: &str, nonce: &str, issued_at: 
         bytes.extend_from_slice(encoded);
     }
     bytes.extend_from_slice(&issued_at.to_be_bytes());
+    bytes
+}
+
+fn control_ack_challenge(
+    receiver_id: &str,
+    phone_id: &str,
+    hello_nonce: &str,
+    token_hash: &str,
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for field in [
+        CONTROL_ACK_DOMAIN,
+        receiver_id,
+        phone_id,
+        hello_nonce,
+        token_hash,
+    ] {
+        let encoded = field.as_bytes();
+        bytes.extend_from_slice(&(encoded.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(encoded);
+    }
     bytes
 }
 
@@ -422,9 +513,12 @@ pub(crate) fn load_tls_config(
         .map_err(|error| format!("could not configure control TLS: {error}"))
 }
 
-fn read_required_line<R: BufRead>(reader: &mut R) -> Result<String, String> {
+fn read_required_line<R: BufRead>(reader: &mut R, deadline: Instant) -> Result<String, String> {
     let mut line = String::new();
     loop {
+        if Instant::now() >= deadline {
+            return Err("control hello timed out".to_owned());
+        }
         match (&mut *reader)
             .take(MAX_MESSAGE_BYTES + 1)
             .read_line(&mut line)
@@ -438,7 +532,12 @@ fn read_required_line<R: BufRead>(reader: &mut R) -> Result<String, String> {
                 if matches!(
                     error.kind(),
                     io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-                ) => {}
+                ) =>
+            {
+                if line.len() as u64 > MAX_MESSAGE_BYTES {
+                    return Err("control hello is too large".to_owned());
+                }
+            }
             Err(error) => return Err(format!("could not read control hello: {error}")),
         }
     }
@@ -465,7 +564,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn control_challenge_encoding_is_stable() {
+    fn control_challenge_encoding_matches_android() {
         let digest = Sha256::digest(control_challenge("rid", "pid", "nonce", 1_100));
         let encoded = digest
             .iter()
@@ -474,6 +573,19 @@ mod tests {
         assert_eq!(
             encoded,
             "b21a5a90d556da636f53e6f7238078d8e9710e240057c7a0783339acc0d56a8d"
+        );
+    }
+
+    #[test]
+    fn control_ack_encoding_matches_android() {
+        let digest = Sha256::digest(control_ack_challenge("rid", "pid", "nonce", "tokhash"));
+        let encoded = digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        assert_eq!(
+            encoded,
+            "0c0e468b7651ca556a48e15e85f166742523fbe41cf3c15b59a61adf7bbfe7ae"
         );
     }
 }

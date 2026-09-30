@@ -17,10 +17,11 @@ checks the certificate fingerprint saved from the pairing QR, so both ends are
 authenticated. Pairing and control bind only the selected private LAN address,
 not every network interface.
 
-The phone receives a short-lived publish-only media token during pairing. A
-successful authenticated control connection refreshes it. The desktop preview
-uses a separate subscribe-only token, and its plaintext WebSocket fallback is
-not exposed beyond loopback.
+The phone receives a short-lived publish-only media token during pairing, scoped
+to its own namespace `lensrelay/<receiverId>/<phoneId>`; it publishes to that
+path. A successful authenticated control connection refreshes it. The desktop
+preview uses a separate subscribe-only token, and its plaintext WebSocket
+fallback is not exposed beyond loopback.
 
 The phone publishes capabilities and current state. The desktop enables only
 controls reported by that phone. Torch, zoom, exposure and focus are applied

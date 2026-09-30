@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    media_auth::MediaAuthorizer,
+    media_auth::{media_token_hash, MediaAuthorizer},
     model::{ConnectionState, PairedDevice, PairingSession, ReceiverStatus},
     pairing::{decode_payload, DesktopIdentity, PairingPayload},
 };
@@ -30,6 +30,8 @@ const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const CHALLENGE_DOMAIN: &str = "lensrelay-phone-pairing-v1";
 const UNPAIR_CHALLENGE_DOMAIN: &str = "lensrelay-phone-unpair-v1";
 const UNPAIR_ACK_DOMAIN: &str = "lensrelay-desktop-unpair-ack-v1";
+const PAIRING_ACK_DOMAIN: &str = "lensrelay-desktop-pairing-ack-v1";
+static PHONES_LOCK: Mutex<()> = Mutex::new(());
 const MAX_UNPAIR_CLOCK_SKEW_SECONDS: u64 = 5 * 60;
 
 #[derive(Deserialize)]
@@ -158,9 +160,9 @@ fn process_request<R: Read>(
         .map_err(|error| format!("invalid pairing request: {error}"))?;
 
     match kind.request_type.as_str() {
-        "" | "pair" => process_pairing_request(&request_line, sessions, receiver, media_auth),
+        "" | "pair" => process_pairing_request(&request_line, sessions, receiver, identity, media_auth),
         "unpair" => process_unpair_request(&request_line, receiver, identity),
-        _ => return Err("unsupported LensRelay request type".to_owned()),
+        _ => Err("unsupported LensRelay request type".to_owned()),
     }
 }
 
@@ -168,9 +170,10 @@ fn process_pairing_request(
     request_line: &str,
     sessions: &Arc<Mutex<Option<PairingSession>>>,
     receiver: &Arc<Mutex<ReceiverStatus>>,
+    identity: &DesktopIdentity,
     media_auth: &MediaAuthorizer,
 ) -> Result<serde_json::Value, String> {
-    let request: PairingRequest = serde_json::from_str(&request_line)
+    let request: PairingRequest = serde_json::from_str(request_line)
         .map_err(|error| format!("invalid pairing request: {error}"))?;
 
     let session = sessions
@@ -180,7 +183,7 @@ fn process_pairing_request(
         .ok_or_else(|| "there is no active pairing code".to_owned())?;
     let payload = decode_payload(&session)?;
     verify_request(&request, &payload)?;
-    let media_token = media_auth.publisher_token(&payload.receiver_id)?;
+    let media_token = media_auth.publisher_token(&payload.receiver_id, &request.phone_id)?;
 
     let mut active = sessions
         .lock()
@@ -196,6 +199,12 @@ fn process_pairing_request(
         .map_err(|_| "receiver state is unavailable".to_owned())?;
     status.connection_state = ConnectionState::Paired;
     status.device_name = Some(request.phone_name.clone());
+    let acknowledgement = pairing_ack_challenge(
+        &request.receiver_id,
+        &request.phone_id,
+        &request.nonce,
+        &media_token_hash(&media_token),
+    );
     Ok(serde_json::json!({
         "ok": true,
         "message": "Phone paired",
@@ -203,6 +212,7 @@ fn process_pairing_request(
         "phoneId": request.phone_id,
         "nonce": request.nonce,
         "mediaToken": media_token,
+        "signature": identity.sign(&acknowledgement),
     }))
 }
 
@@ -224,19 +234,24 @@ fn process_unpair_request(
         return Err("unpair request timestamp is outside the allowed window".to_owned());
     }
     let nonce = decode(&request.nonce, "unpair nonce")?;
-    if nonce.len() < 16 {
-        return Err("unpair nonce is too short".to_owned());
+    if nonce.len() != 24 {
+        return Err("unpair nonce is invalid".to_owned());
     }
 
+    // Fail-closed: an unknown phone id is an error, never a signed no-op
+    // acknowledgement, so the endpoint cannot act as a signature oracle.
+    let phones_guard = PHONES_LOCK
+        .lock()
+        .map_err(|_| "paired phone state is unavailable".to_owned())?;
     let mut phones = load_phones()?;
-    if let Some(phone) = phones
+    let phone = phones
         .iter()
         .find(|phone| phone.phone_id == request.phone_id)
-    {
-        verify_unpair_request(&request, phone)?;
-        phones.retain(|phone| phone.phone_id != request.phone_id);
-        save_phones(&phones)?;
-    }
+        .ok_or_else(|| "phone is not paired".to_owned())?;
+    verify_unpair_request(&request, phone)?;
+    phones.retain(|phone| phone.phone_id != request.phone_id);
+    save_phones(&phones)?;
+    drop(phones_guard);
 
     let latest = phones.iter().max_by_key(|phone| phone.paired_at);
     let mut status = receiver
@@ -311,6 +326,9 @@ pub fn paired_devices() -> Result<Vec<PairedDevice>, String> {
 }
 
 pub fn forget_phone(phone_id: &str) -> Result<(), String> {
+    let _phones_guard = PHONES_LOCK
+        .lock()
+        .map_err(|_| "paired phone state is unavailable".to_owned())?;
     let mut phones = load_phones()?;
     let original_len = phones.len();
     phones.retain(|phone| phone.phone_id != phone_id);
@@ -321,11 +339,14 @@ pub fn forget_phone(phone_id: &str) -> Result<(), String> {
 }
 
 fn persist_phone(request: &PairingRequest) -> Result<(), String> {
+    let _phones_guard = PHONES_LOCK
+        .lock()
+        .map_err(|_| "paired phone state is unavailable".to_owned())?;
     let mut phones = load_phones()?;
     phones.retain(|phone| phone.phone_id != request.phone_id);
     phones.push(StoredPhone {
         phone_id: request.phone_id.clone(),
-        phone_name: request.phone_name.trim().to_owned(),
+        phone_name: request.phone_name.clone(),
         algorithm: request.algorithm.clone(),
         public_key: request.public_key.clone(),
         paired_at: crate::pairing::unix_time()?,
@@ -377,8 +398,7 @@ fn verify_request(request: &PairingRequest, payload: &PairingPayload) -> Result<
     if request.algorithm != "ES256" {
         return Err("unsupported phone identity algorithm".to_owned());
     }
-    let phone_name = request.phone_name.trim();
-    if phone_name.is_empty() || phone_name.chars().count() > 80 {
+    if request.phone_name.is_empty() || request.phone_name.chars().count() > 80 {
         return Err("invalid phone name".to_owned());
     }
 
@@ -393,8 +413,9 @@ fn verify_request(request: &PairingRequest, payload: &PairingPayload) -> Result<
     let signature = Signature::from_der(&signature_bytes)
         .map_err(|_| "invalid phone signature encoding".to_owned())?;
     verifying_key
-        .verify(&challenge(payload, phone_name), &signature)
-        .map_err(|_| "phone pairing signature is invalid".to_owned())
+        .verify(&challenge(payload, &request.phone_name), &signature)
+        .map_err(|_| "phone pairing signature is invalid".to_owned())?;
+    Ok(())
 }
 
 fn challenge(payload: &PairingPayload, phone_name: &str) -> Vec<u8> {
@@ -425,6 +446,21 @@ fn unpair_challenge(receiver_id: &str, phone_id: &str, nonce: &str, issued_at: u
 
 fn unpair_ack_challenge(receiver_id: &str, phone_id: &str, nonce: &str) -> Vec<u8> {
     encoded_fields(&[UNPAIR_ACK_DOMAIN, receiver_id, phone_id, nonce])
+}
+
+fn pairing_ack_challenge(
+    receiver_id: &str,
+    phone_id: &str,
+    nonce: &str,
+    token_hash: &str,
+) -> Vec<u8> {
+    encoded_fields(&[
+        PAIRING_ACK_DOMAIN,
+        receiver_id,
+        phone_id,
+        nonce,
+        token_hash,
+    ])
 }
 
 fn encoded_fields(fields: &[&str]) -> Vec<u8> {
@@ -510,6 +546,43 @@ mod tests {
                 .map(|byte| format!("{byte:02x}"))
                 .collect::<String>(),
             "2fdaeea2a78779ef769abfbf8b0afca7b1e5b14d74c9262471dd89b9b71728dd"
+        );
+    }
+
+    #[test]
+    fn pairing_ack_encoding_matches_android() {
+        let digest = Sha256::digest(pairing_ack_challenge("rid", "pid", "nonce", "tokhash"));
+        assert_eq!(
+            digest
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            "393b8247f001a9002b93a75891822cd865c8cd3279517e1499b218eaf108f76b"
+        );
+    }
+
+    #[test]
+    fn challenge_verifies_multibyte_phone_name_verbatim() {
+        let payload = PairingPayload {
+            version: 1,
+            receiver_id: "rid".to_owned(),
+            receiver_name: "Desk".to_owned(),
+            public_key: "key".to_owned(),
+            nonce: "nonce".to_owned(),
+            expires_at: 1_100,
+            host: "192.168.1.20".to_owned(),
+            port: PAIRING_PORT,
+            control_port: 53_419,
+            media_certificate_fingerprint: "ab".repeat(32),
+        };
+
+        let digest = Sha256::digest(challenge(&payload, "Píxel \u{1F4F7} phone"));
+        assert_eq!(
+            digest
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            "a7a99fe64f8176885c9ca55a5d8dcfa060e84a7366562cbda66dbc9f402398d7"
         );
     }
 }
